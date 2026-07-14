@@ -396,7 +396,7 @@ class _DemoScreenState extends State<DemoScreen>
               ),
               const SizedBox(height: 12),
               Text('应用版本：$_version'),
-              const Text('更新源：GitHub Releases'),
+              const Text('更新源：GitHub Releases（自动升级已验证）'),
               const Text('应用 ID：io.github.admin0330.real_liquid_glass_demo'),
               const SizedBox(height: 16),
               const Text(
