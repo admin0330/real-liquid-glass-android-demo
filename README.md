@@ -16,7 +16,8 @@
 - Bunpod 同款 Material 3 Fade Forwards 页面切换节奏；播放器与专辑详情使用独立路由。
 - 点击“歌词”后由封面 Hero 动画丝滑进入沉浸式歌词播放器；标题和封面收纳在右上角，支持 LRC、Apple Music 风格的逐行高亮、模糊和自动滚动。
 - Now Playing 与歌词页使用 Apple Music 风格的无底色大号实心播放/暂停控制。
-- 从本仓库 GitHub Releases 检查更新、下载 APK 并调用系统安装器覆盖升级。
+- 支持应用内下载并安装更新；同版本 APK 持久缓存并校验包名、版本与 SHA-256，开启安装权限后不会重复下载。
+- 可在设置页配置阿里云 OSS/ECS `latest.json` 镜像，镜像优先且 GitHub Releases 自动回退。
 
 ## 音乐来源
 
@@ -40,5 +41,17 @@ flutter build apk --release
 ## 发布
 
 推送 `v*` 标签会触发 [release.yml](.github/workflows/release.yml)，构建签名 APK 并创建 GitHub Release。当前 Android 应用 ID 保持为 `io.github.admin0330.real_liquid_glass_demo`，以兼容已安装的旧测试版。
+
+每个 Release 同时生成 APK、`.sha256` 和 `latest.json`。将这三个文件放在阿里云同一 HTTPS 目录，然后在应用“设置 → 阿里云更新服务器”填写 `latest.json` 地址即可。清单中的 `apk_url` 使用相对路径，因此同步到 OSS、CDN 或 ECS 后无需改写：
+
+```json
+{
+  "version": "2.4.0",
+  "apk_url": "liquid-music-v2.4.0.apk",
+  "sha256": "64位SHA-256",
+  "size": 55900000,
+  "notes": "版本说明"
+}
+```
 
 代码采用 MIT 许可证；用户应只连接自己拥有或获授权使用的音乐内容。

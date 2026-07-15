@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -935,12 +936,100 @@ class _SettingsPageState extends State<SettingsPage> {
   final updates = GitHubUpdateService();
   bool checking = false;
   String version = '…';
+  String updateMirror = '';
+  UpdateDownloadStatus updateDownload = const UpdateDownloadStatus(
+    state: 'idle',
+  );
+  Timer? updatePoller;
+
   @override
   void initState() {
     super.initState();
-    updates.currentVersion().then((v) {
-      if (mounted) setState(() => version = v);
+    _loadUpdateState();
+  }
+
+  Future<void> _loadUpdateState() async {
+    final values = await Future.wait([
+      updates.currentVersion(),
+      updates.mirrorUrl(),
+      updates.downloadStatus(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      version = values[0] as String;
+      updateMirror = values[1] as String;
+      updateDownload = values[2] as UpdateDownloadStatus;
     });
+    if (updateDownload.downloading) _startUpdatePolling();
+  }
+
+  void _startUpdatePolling() {
+    updatePoller?.cancel();
+    updatePoller = Timer.periodic(const Duration(seconds: 1), (_) async {
+      final status = await updates.downloadStatus();
+      if (!mounted) return;
+      setState(() => updateDownload = status);
+      if (!status.downloading) updatePoller?.cancel();
+    });
+  }
+
+  Future<void> configureUpdateMirror() async {
+    final input = TextEditingController(text: updateMirror);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('阿里云更新服务器'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('填写 latest.json 地址，或填写目录地址由应用自动补全。'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: input,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: '更新清单地址',
+                hintText: 'https://example.com/liquid-music/latest.json',
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '建议使用 HTTPS；镜像不可用时会自动回退 GitHub。',
+              style: TextStyle(color: mutedInk, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, ''),
+            child: const Text('清除镜像'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, input.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    input.dispose();
+    if (value == null) return;
+    final normalized = normalizeManifestUrl(value);
+    final uri = normalized.isEmpty ? null : Uri.tryParse(normalized);
+    if (uri != null &&
+        (uri.host.isEmpty || (uri.scheme != 'http' && uri.scheme != 'https'))) {
+      if (mounted) message(context, '请输入有效的 HTTP 或 HTTPS 地址');
+      return;
+    }
+    await updates.setMirrorUrl(normalized);
+    if (!mounted) return;
+    setState(() => updateMirror = normalized);
+    message(context, normalized.isEmpty ? '已恢复 GitHub 更新源' : '已保存阿里云更新服务器');
   }
 
   Future<void> checkUpdate() async {
@@ -950,6 +1039,9 @@ class _SettingsPageState extends State<SettingsPage> {
       final result = await updates.check();
       if (!mounted) return;
       if (!result.hasUpdate) return message(context, '当前已是最新版本（v$version）');
+      final cached =
+          updateDownload.ready &&
+          updateDownload.version == result.release!.version;
       final install = await showModalBottomSheet<bool>(
         context: context,
         showDragHandle: true,
@@ -965,6 +1057,19 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               const SizedBox(height: 8),
               Text('v${result.currentVersion} → v${result.release!.version}'),
+              const SizedBox(height: 4),
+              Text(
+                '来源：${result.release!.source}',
+                style: const TextStyle(color: mutedInk, fontSize: 13),
+              ),
+              if (result.fallbackReason != null)
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Text(
+                    '镜像暂不可用，已自动切换 GitHub',
+                    style: TextStyle(color: mutedInk, fontSize: 12),
+                  ),
+                ),
               if (result.release!.notes.trim().isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 14),
@@ -979,7 +1084,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 width: double.infinity,
                 child: FilledButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: const Text('下载并安装'),
+                  child: Text(cached ? '安装已下载版本' : '直接下载并安装'),
                 ),
               ),
             ],
@@ -987,14 +1092,20 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
       );
       if (install == true) {
-        final state = await updates.downloadAndInstall(result.release!.apkUrl);
+        final state = await updates.downloadAndInstall(result.release!);
         if (mounted) {
-          message(
-            context,
-            state == InstallStartState.permissionRequired
-                ? '请允许本应用安装未知应用，然后再次检查更新'
-                : '正在后台下载，完成后将打开系统安装界面',
-          );
+          switch (state) {
+            case InstallStartState.downloadStarted:
+            case InstallStartState.downloadInProgress:
+              message(context, '正在应用内下载，完成后会自动打开系统安装器');
+              _startUpdatePolling();
+            case InstallStartState.installStarted:
+              message(context, '已复用下载完成的 APK，正在打开系统安装器');
+            case InstallStartState.permissionRequired:
+              message(context, 'APK 已保存；允许安装未知应用后会直接安装，不会重新下载');
+            case InstallStartState.failed:
+              message(context, '更新文件校验失败，请重新检查更新');
+          }
         }
       }
     } catch (e) {
@@ -1002,6 +1113,23 @@ class _SettingsPageState extends State<SettingsPage> {
     } finally {
       if (mounted) setState(() => checking = false);
     }
+  }
+
+  @override
+  void dispose() {
+    updatePoller?.cancel();
+    super.dispose();
+  }
+
+  String get updateSubtitle {
+    if (updateDownload.downloading) {
+      final percent = (updateDownload.progress * 100).round();
+      return '正在下载 v${updateDownload.version} · $percent%';
+    }
+    if (updateDownload.ready) {
+      return 'v${updateDownload.version} 已下载 · 可直接安装';
+    }
+    return '当前版本 v$version';
   }
 
   @override
@@ -1095,14 +1223,28 @@ class _SettingsPageState extends State<SettingsPage> {
           title: '应用',
           children: [
             SettingsTile(
+              icon: CupertinoIcons.cloud_download_fill,
+              color: const Color(0xFF0A84FF),
+              title: '阿里云更新服务器',
+              subtitle: updateMirror.isEmpty ? '未配置 · 使用 GitHub' : updateMirror,
+              onTap: configureUpdateMirror,
+            ),
+            SettingsTile(
               icon: CupertinoIcons.arrow_down_circle,
               color: const Color(0xFF5E5CE6),
-              title: '检查 GitHub 更新',
-              subtitle: '当前版本 v$version',
-              trailing: checking
-                  ? const SizedBox.square(
+              title: '检查应用更新',
+              subtitle: updateSubtitle,
+              trailing: checking || updateDownload.downloading
+                  ? SizedBox.square(
                       dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        value:
+                            updateDownload.downloading &&
+                                updateDownload.progress > 0
+                            ? updateDownload.progress
+                            : null,
+                      ),
                     )
                   : null,
               onTap: checkUpdate,

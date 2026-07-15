@@ -14,13 +14,20 @@ import android.media.AudioMixerAttributes
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import androidx.core.content.FileProvider
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
+import java.io.FileInputStream
+import java.security.MessageDigest
 
 class MainActivity : AudioServiceActivity() {
     private val channelName = "real_liquid_glass_demo/updater"
     private val usbAudioChannelName = "liquid_music/usb_audio"
+    private val updatePrefs by lazy {
+        getSharedPreferences("liquid_music_updater", Context.MODE_PRIVATE)
+    }
     private val mediaAudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_MEDIA)
         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
@@ -32,8 +39,7 @@ class MainActivity : AudioServiceActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             val completedId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
             if (completedId == activeDownloadId) {
-                installDownloadedApk(completedId)
-                activeDownloadId = null
+                handleCompletedDownload(completedId)
             }
         }
     }
@@ -156,6 +162,7 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        activeDownloadId = updatePrefs.getLong("download_id", -1L).takeIf { it >= 0 }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -166,16 +173,16 @@ class MainActivity : AudioServiceActivity() {
 
                     "downloadAndInstall" -> {
                         val url = call.argument<String>("url")
-                        if (url.isNullOrBlank()) {
-                            result.error("INVALID_URL", "Missing APK URL", null)
-                        } else if (requiresInstallPermission()) {
-                            openInstallPermissionSettings()
-                            result.success("permissionRequired")
+                        val version = call.argument<String>("version")
+                        val sha256 = call.argument<String>("sha256") ?: ""
+                        if (url.isNullOrBlank() || version.isNullOrBlank()) {
+                            result.error("INVALID_UPDATE", "Missing APK URL or version", null)
                         } else {
-                            startDownload(url)
-                            result.success("started")
+                            result.success(startOrReuseDownload(url, version, sha256))
                         }
                     }
+
+                    "getUpdateDownloadStatus" -> result.success(updateDownloadStatus())
 
                     else -> result.notImplemented()
                 }
@@ -205,6 +212,24 @@ class MainActivity : AudioServiceActivity() {
         super.onDestroy()
     }
 
+    override fun onResume() {
+        super.onResume()
+        val pendingPath = updatePrefs.getString("pending_install_path", null)
+        val version = updatePrefs.getString("version", null)
+        val sha256 = updatePrefs.getString("sha256", "") ?: ""
+        if (
+            !pendingPath.isNullOrBlank() &&
+            !version.isNullOrBlank() &&
+            !requiresInstallPermission()
+        ) {
+            val file = File(pendingPath)
+            if (isUsableUpdate(file, version, sha256)) {
+                updatePrefs.edit().remove("pending_install_path").apply()
+                launchInstaller(file)
+            }
+        }
+    }
+
     private fun requiresInstallPermission(): Boolean {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !packageManager.canRequestPackageInstalls()
@@ -221,10 +246,45 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
-    private fun startDownload(url: String) {
+    private fun startOrReuseDownload(url: String, version: String, sha256: String): String {
+        val normalizedVersion = version.removePrefix("v").removePrefix("V")
+        val target = updateFile(normalizedVersion)
+        if (isUsableUpdate(target, normalizedVersion, sha256)) {
+            return requestInstall(target, normalizedVersion, sha256)
+        }
+
+        val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+        val savedId = updatePrefs.getLong("download_id", -1L)
+        val savedVersion = updatePrefs.getString("version", null)
+        if (savedId >= 0 && savedVersion == normalizedVersion) {
+            manager.query(DownloadManager.Query().setFilterById(savedId)).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    when (cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))) {
+                        DownloadManager.STATUS_PENDING,
+                        DownloadManager.STATUS_RUNNING,
+                        DownloadManager.STATUS_PAUSED -> {
+                            activeDownloadId = savedId
+                            return "downloadInProgress"
+                        }
+
+                        DownloadManager.STATUS_SUCCESSFUL -> {
+                            if (isUsableUpdate(target, normalizedVersion, sha256)) {
+                                return requestInstall(target, normalizedVersion, sha256)
+                            }
+                            manager.remove(savedId)
+                        }
+
+                        else -> manager.remove(savedId)
+                    }
+                }
+            }
+        }
+
+        if (target.exists()) target.delete()
+        target.parentFile?.mkdirs()
         val request = DownloadManager.Request(Uri.parse(url))
-            .setTitle("Real Liquid Glass 更新")
-            .setDescription("正在从 GitHub Releases 下载新版 APK")
+            .setTitle("Liquid Music v$normalizedVersion")
+            .setDescription("正在应用内下载更新，完成后打开系统安装器")
             .setMimeType("application/vnd.android.package-archive")
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)
@@ -234,14 +294,23 @@ class MainActivity : AudioServiceActivity() {
             .setDestinationInExternalFilesDir(
                 this,
                 Environment.DIRECTORY_DOWNLOADS,
-                "real-liquid-glass-update-${System.currentTimeMillis()}.apk",
+                target.name,
             )
 
-        val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-        activeDownloadId = manager.enqueue(request)
+        val id = manager.enqueue(request)
+        activeDownloadId = id
+        updatePrefs.edit()
+            .putLong("download_id", id)
+            .putString("version", normalizedVersion)
+            .putString("sha256", sha256.lowercase())
+            .putString("path", target.absolutePath)
+            .putString("url", url)
+            .remove("pending_install_path")
+            .apply()
+        return "downloadStarted"
     }
 
-    private fun installDownloadedApk(downloadId: Long) {
+    private fun handleCompletedDownload(downloadId: Long) {
         val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
         manager.query(DownloadManager.Query().setFilterById(downloadId)).use { cursor ->
             if (!cursor.moveToFirst()) return
@@ -251,13 +320,114 @@ class MainActivity : AudioServiceActivity() {
             if (status != DownloadManager.STATUS_SUCCESSFUL) return
         }
 
-        val apkUri = manager.getUriForDownloadedFile(downloadId) ?: return
+        val version = updatePrefs.getString("version", null) ?: return
+        val sha256 = updatePrefs.getString("sha256", "") ?: ""
+        val target = updateFile(version)
+        if (!isUsableUpdate(target, version, sha256)) {
+            target.delete()
+            return
+        }
+        requestInstall(target, version, sha256)
+    }
+
+    private fun requestInstall(file: File, version: String, sha256: String): String {
+        if (!isUsableUpdate(file, version, sha256)) return "failed"
+        if (requiresInstallPermission()) {
+            updatePrefs.edit().putString("pending_install_path", file.absolutePath).apply()
+            openInstallPermissionSettings()
+            return "permissionRequired"
+        }
+        updatePrefs.edit().remove("pending_install_path").apply()
+        launchInstaller(file)
+        return "installStarted"
+    }
+
+    private fun launchInstaller(file: File) {
+        val apkUri = FileProvider.getUriForFile(
+            this,
+            "$packageName.fileprovider",
+            file,
+        )
         startActivity(
-            Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(apkUri, "application/vnd.android.package-archive")
+            Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                data = apkUri
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                putExtra(Intent.EXTRA_RETURN_RESULT, false)
             },
         )
+    }
+
+    private fun updateFile(version: String): File {
+        val directory = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: File(filesDir, "updates")
+        return File(directory, "liquid-music-v$version.apk")
+    }
+
+    private fun isUsableUpdate(file: File, version: String, sha256: String): Boolean {
+        if (!file.isFile || file.length() <= 0) return false
+        val info = packageManager.getPackageArchiveInfo(file.absolutePath, 0) ?: return false
+        if (info.packageName != packageName) return false
+        val archiveVersion = info.versionName?.removePrefix("v")?.removePrefix("V") ?: return false
+        if (archiveVersion != version.removePrefix("v").removePrefix("V")) return false
+        return sha256.isBlank() || fileSha256(file).equals(sha256, ignoreCase = true)
+    }
+
+    private fun fileSha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { input ->
+            val buffer = ByteArray(1024 * 128)
+            while (true) {
+                val count = input.read(buffer)
+                if (count <= 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun updateDownloadStatus(): Map<String, Any> {
+        val version = updatePrefs.getString("version", "") ?: ""
+        val sha256 = updatePrefs.getString("sha256", "") ?: ""
+        if (version.isBlank()) return mapOf("state" to "idle")
+        val target = updateFile(version)
+        if (isUsableUpdate(target, version, sha256)) {
+            return mapOf(
+                "state" to "ready",
+                "version" to version,
+                "progress" to 1.0,
+                "downloadedBytes" to target.length(),
+                "totalBytes" to target.length(),
+            )
+        }
+
+        val id = updatePrefs.getLong("download_id", -1L)
+        if (id < 0) return mapOf("state" to "idle", "version" to version)
+        val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+        manager.query(DownloadManager.Query().setFilterById(id)).use { cursor ->
+            if (!cursor.moveToFirst()) return mapOf("state" to "failed", "version" to version)
+            val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+            val downloaded = cursor.getLong(
+                cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR),
+            )
+            val total = cursor.getLong(
+                cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES),
+            )
+            val state = when (status) {
+                DownloadManager.STATUS_PENDING -> "pending"
+                DownloadManager.STATUS_RUNNING -> "running"
+                DownloadManager.STATUS_PAUSED -> "paused"
+                DownloadManager.STATUS_SUCCESSFUL -> "verifying"
+                else -> "failed"
+            }
+            return mapOf(
+                "state" to state,
+                "version" to version,
+                "progress" to if (total > 0) downloaded.toDouble() / total else 0.0,
+                "downloadedBytes" to downloaded,
+                "totalBytes" to total,
+            )
+        }
     }
 }

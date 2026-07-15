@@ -47,6 +47,19 @@ jobs:
           flutter build apk --release
           mv build/app/outputs/flutter-apk/app-release.apk \
             "build/app/outputs/flutter-apk/liquid-music-${GITHUB_REF_NAME}.apk"
+          APK="build/app/outputs/flutter-apk/liquid-music-${GITHUB_REF_NAME}.apk"
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA256="$(sha256sum "$APK" | cut -d ' ' -f 1)"
+          SIZE="$(stat -c '%s' "$APK")"
+          printf '%s  %s\n' "$SHA256" "$(basename "$APK")" > "$APK.sha256"
+          jq -n \
+            --arg version "$VERSION" \
+            --arg apk_url "$(basename "$APK")" \
+            --arg sha256 "$SHA256" \
+            --argjson size "$SIZE" \
+            --arg notes "Liquid Music ${GITHUB_REF_NAME}" \
+            '{version:$version, apk_url:$apk_url, sha256:$sha256, size:$size, notes:$notes}' \
+            > build/app/outputs/flutter-apk/latest.json
 
       - name: Publish GitHub Release
         env:
@@ -54,5 +67,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             "build/app/outputs/flutter-apk/liquid-music-${GITHUB_REF_NAME}.apk" \
+            "build/app/outputs/flutter-apk/liquid-music-${GITHUB_REF_NAME}.apk.sha256" \
+            "build/app/outputs/flutter-apk/latest.json" \
             --title "Liquid Music ${GITHUB_REF_NAME}" \
             --generate-notes
