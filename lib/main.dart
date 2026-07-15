@@ -23,8 +23,6 @@ const canvas = Color(0xFFF5F5F7);
 const glassFill = Color(0xE8FDFDFE);
 const glassStroke = Color(0x241D1D1F);
 const glassShadow = Color(0x1F000000);
-const cardFill = Color(0xDCFDFDFE);
-const cardStroke = Color(0x1A1D1D1F);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -457,7 +455,7 @@ class BackgroundPainter extends CustomPainter {
       radius,
       Paint()
         ..shader = RadialGradient(
-          colors: [color.withValues(alpha: .24), color.withValues(alpha: 0)],
+          colors: [color.withValues(alpha: .16), color.withValues(alpha: 0)],
         ).createShader(Rect.fromCircle(center: center, radius: radius))
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * .22),
     );
@@ -529,7 +527,7 @@ class PageHeader extends StatelessWidget {
   final Widget? trailing;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(20, 18, 16, 14),
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -590,13 +588,24 @@ class HomePage extends StatelessWidget {
             PageHeader(
               '主页',
               subtitle: greeting(),
-              trailing: IconButton.filledTonal(
-                onPressed: () => controller.importLocal().then((count) {
-                  if (context.mounted) {
-                    message(context, count == 0 ? '没有选择音乐' : '已导入 $count 首歌曲');
-                  }
-                }),
-                icon: const Icon(CupertinoIcons.add),
+              trailing: GlassPanel(
+                radius: 24,
+                padding: EdgeInsets.zero,
+                child: SizedBox.square(
+                  dimension: 48,
+                  child: IconButton(
+                    tooltip: '导入音乐',
+                    onPressed: () => controller.importLocal().then((count) {
+                      if (context.mounted) {
+                        message(
+                          context,
+                          count == 0 ? '没有选择音乐' : '已导入 $count 首歌曲',
+                        );
+                      }
+                    }),
+                    icon: const Icon(CupertinoIcons.add, size: 24),
+                  ),
+                ),
               ),
             ),
             if (controller.loading && albums.isEmpty)
@@ -609,12 +618,12 @@ class HomePage extends StatelessWidget {
             if (albums.isNotEmpty) ...[
               SectionTitle('最近添加', action: '查看资料库'),
               SizedBox(
-                height: 224,
+                height: 226,
                 child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   scrollDirection: Axis.horizontal,
                   itemCount: math.min(albums.length, 12),
-                  separatorBuilder: (_, _) => const SizedBox(width: 14),
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
                   itemBuilder: (_, index) => AlbumTile(
                     album: albums[index],
                     onTap: () => onAlbum(albums[index]),
@@ -2512,7 +2521,7 @@ class TrackRow extends StatelessWidget {
   );
 }
 
-class AlbumTile extends StatelessWidget {
+class AlbumTile extends StatefulWidget {
   const AlbumTile({
     super.key,
     required this.album,
@@ -2522,173 +2531,101 @@ class AlbumTile extends StatelessWidget {
   final MusicAlbum album;
   final VoidCallback onTap;
   final VoidCallback onPlay;
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 174,
-    child: GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFE8EC),
-          borderRadius: BorderRadius.circular(32),
-          border: Border.all(color: cardStroke),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x12000000),
-              blurRadius: 20,
-              offset: Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ClipPath(
-                  clipper: const CookieClipper(),
-                  child: Artwork(album: album, size: 92, radius: 0),
-                ),
-                const Spacer(),
-                ExpressivePlayButton(
-                  playing: false,
-                  onPressed: onPlay,
-                  size: 48,
-                  compact: true,
-                ),
-              ],
-            ),
-            const Spacer(),
-            Text(
-              album.artist.toUpperCase(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: musicRed,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: .7,
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              album.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 16,
-                height: 1.05,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -.35,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class ExpressivePlayButton extends StatefulWidget {
-  const ExpressivePlayButton({
-    super.key,
-    required this.playing,
-    required this.onPressed,
-    this.size = 82,
-    this.compact = false,
-  });
-
-  final bool playing;
-  final VoidCallback onPressed;
-  final double size;
-  final bool compact;
 
   @override
-  State<ExpressivePlayButton> createState() => _ExpressivePlayButtonState();
+  State<AlbumTile> createState() => _AlbumTileState();
 }
 
-class _ExpressivePlayButtonState extends State<ExpressivePlayButton> {
+class _AlbumTileState extends State<AlbumTile> {
   bool pressed = false;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: widget.playing ? '暂停' : '播放',
+  Widget build(BuildContext context) => SizedBox(
+    width: 168,
     child: GestureDetector(
+      key: ValueKey('album-tile-${widget.album.id}'),
       behavior: HitTestBehavior.opaque,
       onTapDown: (_) => setState(() => pressed = true),
       onTapCancel: () => setState(() => pressed = false),
       onTapUp: (_) {
         setState(() => pressed = false);
-        widget.onPressed();
+        HapticFeedback.selectionClick();
+        widget.onTap();
       },
       child: AnimatedScale(
-        scale: pressed ? .9 : 1,
-        duration: const Duration(milliseconds: 130),
-        curve: Curves.easeOutBack,
-        child: AnimatedContainer(
-          width: widget.size,
-          height: widget.size,
-          duration: const Duration(milliseconds: 340),
-          curve: Curves.easeOutBack,
-          decoration: BoxDecoration(
-            color: widget.compact ? Colors.white : ink,
-            borderRadius: BorderRadius.circular(
-              widget.playing ? widget.size / 2 : widget.size * .31,
+        scale: pressed ? .97 : 1,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                Artwork(
+                  album: widget.album,
+                  size: 168,
+                  radius: 16,
+                  shadow: true,
+                ),
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: GestureDetector(
+                    key: ValueKey('album-play-${widget.album.id}'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      widget.onPlay();
+                    },
+                    child: GlassPanel(
+                      radius: 22,
+                      padding: EdgeInsets.zero,
+                      color: const Color(0xA6F9F9FB),
+                      borderColor: const Color(0x8CFFFFFF),
+                      shadowColor: const Color(0x26000000),
+                      blur: 20,
+                      child: const SizedBox.square(
+                        dimension: 44,
+                        child: Icon(
+                          CupertinoIcons.play_fill,
+                          color: ink,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x22000000),
-                blurRadius: 18,
-                offset: Offset(0, 8),
+            const SizedBox(height: 8),
+            Text(
+              widget.album.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 15,
+                height: 1.2,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -.2,
               ),
-            ],
-          ),
-          child: Icon(
-            widget.playing
-                ? CupertinoIcons.pause_fill
-                : CupertinoIcons.play_fill,
-            color: widget.compact ? ink : Colors.white,
-            size: widget.size * .42,
-          ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              widget.album.artist,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: mutedInk,
+                fontSize: 14,
+                height: 1.2,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
         ),
       ),
     ),
   );
-}
-
-class CookieClipper extends CustomClipper<Path> {
-  const CookieClipper();
-
-  @override
-  Path getClip(Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final outer = size.shortestSide * .51;
-    final inner = size.shortestSide * .43;
-    final points = <Offset>[];
-    for (var i = 0; i < 14; i++) {
-      final angle = -math.pi / 2 + i * math.pi / 7;
-      final radius = i.isEven ? outer : inner;
-      points.add(center + Offset(math.cos(angle), math.sin(angle)) * radius);
-    }
-    final path = Path();
-    for (var i = 0; i < points.length; i++) {
-      final current = points[i];
-      final next = points[(i + 1) % points.length];
-      final midpoint = Offset(
-        (current.dx + next.dx) / 2,
-        (current.dy + next.dy) / 2,
-      );
-      if (i == 0) path.moveTo(midpoint.dx, midpoint.dy);
-      path.quadraticBezierTo(next.dx, next.dy, midpoint.dx, midpoint.dy);
-    }
-    return path..close();
-  }
-
-  @override
-  bool shouldReclip(CookieClipper oldClipper) => false;
 }
 
 class AlbumGrid extends StatelessWidget {
@@ -2707,60 +2644,49 @@ class AlbumGrid extends StatelessWidget {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         mainAxisSpacing: 16,
-        crossAxisSpacing: 14,
-        childAspectRatio: .78,
+        crossAxisSpacing: 12,
+        childAspectRatio: .79,
       ),
       itemCount: albums.length,
       itemBuilder: (_, i) => LayoutBuilder(
         builder: (_, constraints) => GestureDetector(
           onTap: () => onAlbum(albums[i]),
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: cardFill,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: cardStroke),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x16000000),
-                  blurRadius: 18,
-                  offset: Offset(0, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Artwork(
+                album: albums[i],
+                size: constraints.maxWidth,
+                radius: 16,
+                shadow: true,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                albums[i].name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -.2,
                 ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Artwork(
-                  album: albums[i],
-                  size: constraints.maxWidth - 16,
-                  radius: 17,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                albums[i].artist,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: mutedInk,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
                 ),
-                const SizedBox(height: 7),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Text(
-                    albums[i].name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Text(
-                    albums[i].artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: mutedInk, fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -2819,7 +2745,7 @@ class SectionTitle extends StatelessWidget {
   final String? action;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+    padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
     child: Row(
       children: [
         Expanded(
