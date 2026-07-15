@@ -45,18 +45,48 @@ class LocalLibraryService {
   Future<List<MusicTrack>> pickAndImport() async {
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: true,
-      type: FileType.custom,
-      allowedExtensions: supportedExtensions,
+      // Some Android file managers (including MIUI) hide FLAC when a custom
+      // extension filter is supplied. Show all files, then validate locally.
+      type: FileType.any,
       withData: false,
     );
     if (result == null) return [];
     final imported = <MusicTrack>[];
     for (final item in result.files) {
       if (item.path == null) continue;
+      final extension = item.path!.split('.').last.toLowerCase();
+      if (!supportedExtensions.contains(extension)) continue;
       try {
         imported.add(await _import(File(item.path!)));
       } catch (_) {
         // Skip unreadable or unsupported files while preserving successful imports.
+      }
+    }
+    if (imported.isNotEmpty) {
+      final existing = await load();
+      final byId = {for (final track in existing) track.id: track};
+      for (final track in imported) {
+        byId[track.id] = track;
+      }
+      await save(byId.values.toList());
+    }
+    return imported;
+  }
+
+  Future<List<MusicTrack>> importInbox() async {
+    final support = await getApplicationSupportDirectory();
+    final inbox = Directory('${support.path}${Platform.pathSeparator}inbox');
+    if (!await inbox.exists()) return [];
+    final imported = <MusicTrack>[];
+    await for (final entry in inbox.list()) {
+      if (entry is! File) continue;
+      final extension = entry.path.split('.').last.toLowerCase();
+      if (!supportedExtensions.contains(extension)) continue;
+      try {
+        imported.add(await _import(entry));
+        await entry.delete();
+      } catch (_) {
+        // Keep failed files in the inbox so they can be inspected or retried.
       }
     }
     if (imported.isNotEmpty) {

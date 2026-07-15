@@ -119,7 +119,7 @@ class _MusicShellState extends State<MusicShell> {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.controller,
     builder: (context, _) {
-      final bottom = widget.controller.playback.current == null ? 100.0 : 190.0;
+      final bottom = widget.controller.playback.current == null ? 82.0 : 154.0;
       return Scaffold(
         extendBody: true,
         body: Stack(
@@ -155,53 +155,21 @@ class _MusicShellState extends State<MusicShell> {
               Positioned(
                 left: 10,
                 right: 10,
-                bottom: 100,
+                bottom: 76,
                 child: MiniPlayer(
                   controller: widget.controller,
                   onTap: openPlayer,
                 ),
               ),
             Positioned(
-              left: 10,
-              right: 10,
-              bottom: 8,
+              left: 12,
+              right: 12,
+              bottom: 5,
               child: SafeArea(
                 top: false,
-                child: GlassPanel(
-                  radius: 24,
-                  padding: EdgeInsets.zero,
-                  child: NavigationBar(
-                    height: 66,
-                    selectedIndex: tab,
-                    backgroundColor: Colors.transparent,
-                    indicatorColor: const Color(0x18FA2D48),
-                    labelBehavior:
-                        NavigationDestinationLabelBehavior.alwaysShow,
-                    onDestinationSelected: (value) =>
-                        setState(() => tab = value),
-                    destinations: const [
-                      NavigationDestination(
-                        icon: Icon(CupertinoIcons.play_circle),
-                        selectedIcon: Icon(CupertinoIcons.play_circle_fill),
-                        label: '主页',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(CupertinoIcons.music_albums),
-                        selectedIcon: Icon(CupertinoIcons.music_albums_fill),
-                        label: '资料库',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(CupertinoIcons.search),
-                        selectedIcon: Icon(CupertinoIcons.search_circle_fill),
-                        label: '搜索',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(CupertinoIcons.gear),
-                        selectedIcon: Icon(CupertinoIcons.gear_solid),
-                        label: '设置',
-                      ),
-                    ],
-                  ),
+                child: TelegramDock(
+                  selectedIndex: tab,
+                  onSelected: (value) => setState(() => tab = value),
                 ),
               ),
             ),
@@ -209,6 +177,113 @@ class _MusicShellState extends State<MusicShell> {
         ),
       );
     },
+  );
+}
+
+class TelegramDock extends StatelessWidget {
+  const TelegramDock({
+    super.key,
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  static const _items = <({IconData icon, IconData selected, String label})>[
+    (
+      icon: CupertinoIcons.play_circle,
+      selected: CupertinoIcons.play_circle_fill,
+      label: '主页',
+    ),
+    (
+      icon: CupertinoIcons.music_albums,
+      selected: CupertinoIcons.music_albums_fill,
+      label: '资料库',
+    ),
+    (
+      icon: CupertinoIcons.search,
+      selected: CupertinoIcons.search_circle_fill,
+      label: '搜索',
+    ),
+    (
+      icon: CupertinoIcons.gear,
+      selected: CupertinoIcons.gear_solid,
+      label: '设置',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(28),
+    child: BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+      child: Container(
+        height: 58,
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFDFDFE).withValues(alpha: .82),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Colors.white.withValues(alpha: .95)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1C000000),
+              blurRadius: 24,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: List.generate(_items.length, (index) {
+            final item = _items[index];
+            final selected = index == selectedIndex;
+            return Expanded(
+              child: Semantics(
+                selected: selected,
+                button: true,
+                label: item.label,
+                child: InkWell(
+                  onTap: () => onSelected(index),
+                  borderRadius: BorderRadius.circular(22),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0x14FA2D48)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          selected ? item.selected : item.icon,
+                          color: selected ? musicRed : mutedInk,
+                          size: 22,
+                        ),
+                        const SizedBox(height: 1),
+                        Text(
+                          item.label,
+                          style: TextStyle(
+                            color: selected ? musicRed : mutedInk,
+                            fontSize: 10,
+                            height: 1,
+                            fontWeight: selected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    ),
   );
 }
 
@@ -408,6 +483,10 @@ class HomePage extends StatelessWidget {
                   itemBuilder: (_, index) => AlbumTile(
                     album: albums[index],
                     onTap: () => onAlbum(albums[index]),
+                    onPlay: () async {
+                      final album = await controller.loadAlbum(albums[index]);
+                      await controller.playback.playTracks(album.tracks);
+                    },
                   ),
                 ),
               ),
@@ -687,6 +766,12 @@ class _SearchPageState extends State<SearchPage> {
                 itemBuilder: (_, i) => AlbumTile(
                   album: result.albums[i],
                   onTap: () => widget.onAlbum(result.albums[i]),
+                  onPlay: () async {
+                    final album = await widget.controller.loadAlbum(
+                      result.albums[i],
+                    );
+                    await widget.controller.playback.playTracks(album.tracks);
+                  },
                 ),
               ),
             ),
@@ -846,6 +931,37 @@ class _SettingsPageState extends State<SettingsPage> {
               color: const Color(0xFFAF52DE),
               title: '原始音质播放',
               subtitle: '无损源不主动转码 · 支持后台与锁屏控制',
+            ),
+            SettingsTile(
+              icon: Icons.usb_rounded,
+              color: const Color(0xFF007AFF),
+              title: 'USB 独占 / Bit-perfect',
+              subtitle: widget.controller.usbAudioStatus.enabled
+                  ? widget.controller.usbAudioStatus.detail
+                  : widget.controller.usbAudioStatus.message,
+              trailing: widget.controller.usbAudioBusy
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Switch.adaptive(
+                      value: widget.controller.usbAudioStatus.enabled,
+                      onChanged: (value) async {
+                        try {
+                          final status = await widget.controller
+                              .setUsbExclusive(value);
+                          if (context.mounted) message(context, status.message);
+                        } catch (e) {
+                          if (context.mounted) message(context, '$e');
+                        }
+                      },
+                    ),
+              onTap: () async {
+                await widget.controller.refreshUsbAudio();
+                if (context.mounted) {
+                  message(context, widget.controller.usbAudioStatus.message);
+                }
+              },
             ),
             SettingsTile(
               icon: CupertinoIcons.arrow_down_circle_fill,
@@ -1143,15 +1259,10 @@ class _PlayerSheetState extends State<PlayerSheet> {
                   iconSize: 36,
                   icon: const Icon(CupertinoIcons.backward_fill),
                 ),
-                IconButton.filled(
+                ExpressivePlayButton(
+                  playing: playback.playing,
                   onPressed: playback.toggle,
-                  iconSize: 40,
-                  padding: const EdgeInsets.all(17),
-                  icon: Icon(
-                    playback.playing
-                        ? CupertinoIcons.pause_fill
-                        : CupertinoIcons.play_fill,
-                  ),
+                  size: 82,
                 ),
                 IconButton(
                   onPressed: playback.next,
@@ -1713,35 +1824,181 @@ class TrackRow extends StatelessWidget {
 }
 
 class AlbumTile extends StatelessWidget {
-  const AlbumTile({super.key, required this.album, required this.onTap});
+  const AlbumTile({
+    super.key,
+    required this.album,
+    required this.onTap,
+    required this.onPlay,
+  });
   final MusicAlbum album;
   final VoidCallback onTap;
+  final VoidCallback onPlay;
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: 158,
+    width: 174,
     child: GestureDetector(
       onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Artwork(album: album, size: 158, radius: 17),
-          const SizedBox(height: 8),
-          Text(
-            album.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          Text(
-            album.artist,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: mutedInk, fontSize: 13),
-          ),
-        ],
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFE8EC),
+          borderRadius: BorderRadius.circular(32),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x12000000),
+              blurRadius: 20,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipPath(
+                  clipper: const CookieClipper(),
+                  child: Artwork(album: album, size: 92, radius: 0),
+                ),
+                const Spacer(),
+                ExpressivePlayButton(
+                  playing: false,
+                  onPressed: onPlay,
+                  size: 48,
+                  compact: true,
+                ),
+              ],
+            ),
+            const Spacer(),
+            Text(
+              album.artist.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: musicRed,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: .7,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              album.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 16,
+                height: 1.05,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -.35,
+              ),
+            ),
+          ],
+        ),
       ),
     ),
   );
+}
+
+class ExpressivePlayButton extends StatefulWidget {
+  const ExpressivePlayButton({
+    super.key,
+    required this.playing,
+    required this.onPressed,
+    this.size = 82,
+    this.compact = false,
+  });
+
+  final bool playing;
+  final VoidCallback onPressed;
+  final double size;
+  final bool compact;
+
+  @override
+  State<ExpressivePlayButton> createState() => _ExpressivePlayButtonState();
+}
+
+class _ExpressivePlayButtonState extends State<ExpressivePlayButton> {
+  bool pressed = false;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: widget.playing ? '暂停' : '播放',
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => pressed = true),
+      onTapCancel: () => setState(() => pressed = false),
+      onTapUp: (_) {
+        setState(() => pressed = false);
+        widget.onPressed();
+      },
+      child: AnimatedScale(
+        scale: pressed ? .9 : 1,
+        duration: const Duration(milliseconds: 130),
+        curve: Curves.easeOutBack,
+        child: AnimatedContainer(
+          width: widget.size,
+          height: widget.size,
+          duration: const Duration(milliseconds: 340),
+          curve: Curves.easeOutBack,
+          decoration: BoxDecoration(
+            color: widget.compact ? Colors.white : ink,
+            borderRadius: BorderRadius.circular(
+              widget.playing ? widget.size / 2 : widget.size * .31,
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x22000000),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Icon(
+            widget.playing
+                ? CupertinoIcons.pause_fill
+                : CupertinoIcons.play_fill,
+            color: widget.compact ? ink : Colors.white,
+            size: widget.size * .42,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class CookieClipper extends CustomClipper<Path> {
+  const CookieClipper();
+
+  @override
+  Path getClip(Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final outer = size.shortestSide * .51;
+    final inner = size.shortestSide * .43;
+    final points = <Offset>[];
+    for (var i = 0; i < 14; i++) {
+      final angle = -math.pi / 2 + i * math.pi / 7;
+      final radius = i.isEven ? outer : inner;
+      points.add(center + Offset(math.cos(angle), math.sin(angle)) * radius);
+    }
+    final path = Path();
+    for (var i = 0; i < points.length; i++) {
+      final current = points[i];
+      final next = points[(i + 1) % points.length];
+      final midpoint = Offset(
+        (current.dx + next.dx) / 2,
+        (current.dy + next.dy) / 2,
+      );
+      if (i == 0) path.moveTo(midpoint.dx, midpoint.dy);
+      path.quadraticBezierTo(next.dx, next.dy, midpoint.dx, midpoint.dy);
+    }
+    return path..close();
+  }
+
+  @override
+  bool shouldReclip(CookieClipper oldClipper) => false;
 }
 
 class AlbumGrid extends StatelessWidget {

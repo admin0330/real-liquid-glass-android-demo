@@ -102,6 +102,16 @@ class PlaybackController extends ChangeNotifier {
   Future<void> playAt(int index) =>
       player.seek(Duration.zero, index: index).then((_) => player.play());
 
+  Future<void> reopenAudioSink() async {
+    if (current == null) return;
+    final position = player.position;
+    final index = currentIndex;
+    final resume = playing;
+    await player.stop();
+    await player.seek(position, index: index);
+    if (resume) await player.play();
+  }
+
   Future<void> reorderQueue(int oldIndex, int newIndex) async {
     if (oldIndex == newIndex ||
         oldIndex < 0 ||

@@ -10,6 +10,7 @@ import 'download_service.dart';
 import 'local_library_service.dart';
 import 'playback_controller.dart';
 import 'subsonic_service.dart';
+import 'usb_audio_service.dart';
 
 class MusicController extends ChangeNotifier {
   MusicController() {
@@ -26,6 +27,7 @@ class MusicController extends ChangeNotifier {
   final LocalLibraryService _localService = LocalLibraryService();
   final DownloadService _downloadService = DownloadService();
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  final UsbAudioService _usbAudioService = UsbAudioService();
 
   List<MusicTrack> localTracks = [];
   List<MusicTrack> remoteFavorites = [];
@@ -39,6 +41,8 @@ class MusicController extends ChangeNotifier {
   bool loading = true;
   bool importing = false;
   bool searching = false;
+  bool usbAudioBusy = false;
+  UsbAudioStatus usbAudioStatus = const UsbAudioStatus();
   String? error;
   final Map<String, double> downloadProgress = {};
   Timer? _searchDebounce;
@@ -93,7 +97,9 @@ class MusicController extends ChangeNotifier {
     loading = true;
     notifyListeners();
     await playback.initialize();
+    await refreshUsbAudio(silent: true);
     final prefs = await SharedPreferences.getInstance();
+    await _localService.importInbox();
     localTracks = await _localService.load();
     offlineTracks = _decodeTracks(prefs.getString(_offlineKey));
     personalPlaylists = _decodePlaylists(prefs.getString(_playlistsKey));
@@ -111,6 +117,36 @@ class MusicController extends ChangeNotifier {
     }
     loading = false;
     notifyListeners();
+  }
+
+  Future<void> refreshUsbAudio({bool silent = false}) async {
+    if (!silent) {
+      usbAudioBusy = true;
+      notifyListeners();
+    }
+    try {
+      usbAudioStatus = await _usbAudioService.status();
+    } catch (e) {
+      usbAudioStatus = UsbAudioStatus(message: '读取 USB 音频状态失败：$e');
+    } finally {
+      usbAudioBusy = false;
+      if (!silent) notifyListeners();
+    }
+  }
+
+  Future<UsbAudioStatus> setUsbExclusive(bool enabled) async {
+    usbAudioBusy = true;
+    notifyListeners();
+    try {
+      usbAudioStatus = await _usbAudioService.setExclusive(enabled);
+      if (usbAudioStatus.enabled || !enabled) {
+        await playback.reopenAudioSink();
+      }
+      return usbAudioStatus;
+    } finally {
+      usbAudioBusy = false;
+      notifyListeners();
+    }
   }
 
   Future<int> importLocal() async {
