@@ -111,11 +111,18 @@ class _MusicShellState extends State<MusicShell> {
     ),
   );
 
-  void openAlbum(MusicAlbum album) => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => AlbumScreen(controller: widget.controller, album: album),
-    ),
-  );
+  Future<void> openAlbum(MusicAlbum album) async {
+    final selected = await Navigator.of(context).push<int>(
+      MaterialPageRoute<int>(
+        builder: (_) => AlbumScreen(
+          controller: widget.controller,
+          album: album,
+          selectedIndex: tab,
+        ),
+      ),
+    );
+    if (selected != null && mounted) setState(() => tab = selected);
+  }
 
   void openPlaylist(MusicPlaylist playlist) => Navigator.of(context).push(
     MaterialPageRoute<void>(
@@ -482,23 +489,31 @@ class GlassPanel extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(16),
     this.radius = 26,
+    this.color = glassFill,
+    this.borderColor = glassStroke,
+    this.shadowColor = glassShadow,
+    this.blur = 28,
   });
   final Widget child;
   final EdgeInsets padding;
   final double radius;
+  final Color color;
+  final Color borderColor;
+  final Color shadowColor;
+  final double blur;
   @override
   Widget build(BuildContext context) => ClipRRect(
     borderRadius: BorderRadius.circular(radius),
     child: BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+      filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
       child: Container(
         padding: padding,
         decoration: BoxDecoration(
-          color: glassFill,
+          color: color,
           borderRadius: BorderRadius.circular(radius),
-          border: Border.all(color: glassStroke),
-          boxShadow: const [
-            BoxShadow(color: glassShadow, blurRadius: 26, offset: Offset(0, 9)),
+          border: Border.all(color: borderColor),
+          boxShadow: [
+            BoxShadow(color: shadowColor, blurRadius: 26, offset: Offset(0, 9)),
           ],
         ),
         child: child,
@@ -1349,9 +1364,15 @@ class SettingsTile extends StatelessWidget {
 }
 
 class MiniPlayer extends StatelessWidget {
-  const MiniPlayer({super.key, required this.controller, required this.onTap});
+  const MiniPlayer({
+    super.key,
+    required this.controller,
+    required this.onTap,
+    this.dark = false,
+  });
   final MusicController controller;
   final VoidCallback onTap;
+  final bool dark;
   @override
   Widget build(BuildContext context) {
     final playback = controller.playback;
@@ -1364,6 +1385,9 @@ class MiniPlayer extends StatelessWidget {
         child: GlassPanel(
           radius: 20,
           padding: const EdgeInsets.all(8),
+          color: dark ? const Color(0x2BFFFFFF) : glassFill,
+          borderColor: dark ? const Color(0x66FFFFFF) : glassStroke,
+          shadowColor: dark ? const Color(0x26000000) : glassShadow,
           child: Row(
             children: [
               Artwork(track: track, size: 52, radius: 13),
@@ -1376,13 +1400,19 @@ class MiniPlayer extends StatelessWidget {
                       track.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        color: dark ? Colors.white : ink,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     Text(
                       track.artist,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: mutedInk, fontSize: 13),
+                      style: TextStyle(
+                        color: dark ? Colors.white70 : mutedInk,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ),
@@ -1390,11 +1420,13 @@ class MiniPlayer extends StatelessWidget {
               AppleMusicPlayButton(
                 playing: playback.playing,
                 onPressed: playback.toggle,
+                color: dark ? Colors.white : ink,
                 size: 48,
                 iconSize: 27,
               ),
               IconButton(
                 onPressed: playback.next,
+                color: dark ? Colors.white : ink,
                 icon: const Icon(CupertinoIcons.forward_fill),
               ),
             ],
@@ -1763,9 +1795,15 @@ class _PlayerActionState extends State<PlayerAction> {
 }
 
 class AlbumScreen extends StatefulWidget {
-  const AlbumScreen({super.key, required this.controller, required this.album});
+  const AlbumScreen({
+    super.key,
+    required this.controller,
+    required this.album,
+    required this.selectedIndex,
+  });
   final MusicController controller;
   final MusicAlbum album;
+  final int selectedIndex;
   @override
   State<AlbumScreen> createState() => _AlbumScreenState();
 }
@@ -1773,6 +1811,8 @@ class AlbumScreen extends StatefulWidget {
 class _AlbumScreenState extends State<AlbumScreen> {
   MusicAlbum? album;
   String? error;
+  bool saved = true;
+
   @override
   void initState() {
     super.initState();
@@ -1789,139 +1829,472 @@ class _AlbumScreenState extends State<AlbumScreen> {
   @override
   Widget build(BuildContext context) {
     final value = album ?? widget.album;
-    return Scaffold(
-      body: Stack(
-        children: [
-          const Positioned.fill(child: FrostedBackground()),
-          SafeArea(
-            child: CustomScrollView(
-              slivers: [
-                SliverAppBar(
-                  backgroundColor: Colors.transparent,
-                  pinned: true,
-                  title: Text(value.name),
-                  actions: [
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(CupertinoIcons.ellipsis_circle),
-                    ),
-                  ],
+    final playback = widget.controller.playback;
+    return AnimatedBuilder(
+      animation: playback,
+      builder: (context, _) {
+        const dockHeight = 58.0;
+        const dockOuterBottom = 5.0;
+        const dockGap = 8.0;
+        const miniPlayerHeight = 68.0;
+        final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
+        final dockTop = safeBottom + dockOuterBottom + dockHeight;
+        final miniPlayerBottom = dockTop + dockGap;
+        final contentBottom = playback.current == null
+            ? dockTop + 24
+            : miniPlayerBottom + miniPlayerHeight + 24;
+        return Scaffold(
+          backgroundColor: const Color(0xFF88867D),
+          extendBody: true,
+          body: Stack(
+            children: [
+              Positioned.fill(child: _AlbumBackdrop(album: value)),
+              ListView(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  MediaQuery.paddingOf(context).top + 92,
+                  16,
+                  contentBottom,
                 ),
-                SliverToBoxAdapter(
-                  child: Column(
+                children: [
+                  Center(
+                    child: Artwork(
+                      album: value,
+                      size: math.min(
+                        MediaQuery.sizeOf(context).width - 88,
+                        326,
+                      ),
+                      radius: 18,
+                      shadow: true,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    value.name,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      height: 1.08,
+                      letterSpacing: -.6,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    value.artist,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _albumQuality(value),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
                     children: [
-                      const SizedBox(height: 12),
-                      Artwork(
-                        album: value,
-                        size: math.min(
-                          MediaQuery.sizeOf(context).width - 96,
-                          310,
-                        ),
-                        radius: 24,
-                        shadow: true,
+                      _AlbumGlassAction(
+                        label: '随机播放',
+                        icon: CupertinoIcons.shuffle,
+                        onTap: value.tracks.isEmpty
+                            ? null
+                            : () async {
+                                if (!playback.shuffle) {
+                                  await playback.toggleShuffle();
+                                }
+                                await playback.playTracks(value.tracks);
+                              },
                       ),
-                      const SizedBox(height: 20),
-                      Text(
-                        value.name,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 25,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        value.artist,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          color: musicRed,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        [
-                          if (value.year != null) '${value.year}',
-                          '${value.songCount} 首歌曲',
-                        ].join(' · '),
-                        style: const TextStyle(color: mutedInk),
-                      ),
-                      const SizedBox(height: 18),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 18),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: FilledButton.tonalIcon(
-                                onPressed: value.tracks.isEmpty
-                                    ? null
-                                    : () => widget.controller.playback
-                                          .playTracks(value.tracks),
-                                icon: const Icon(CupertinoIcons.play_fill),
-                                label: const Text('播放'),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: SizedBox(
+                          height: 60,
+                          child: FilledButton.icon(
+                            onPressed: value.tracks.isEmpty
+                                ? null
+                                : () => playback.playTracks(value.tracks),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: const Color(0xFF77766F),
+                              disabledBackgroundColor: Colors.white38,
+                              shape: const StadiumBorder(),
+                              textStyle: const TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: FilledButton.tonalIcon(
-                                onPressed: value.tracks.isEmpty
-                                    ? null
-                                    : () async {
-                                        await widget.controller.playback
-                                            .toggleShuffle();
-                                        await widget.controller.playback
-                                            .playTracks(value.tracks);
-                                      },
-                                icon: const Icon(CupertinoIcons.shuffle),
-                                label: const Text('随机播放'),
+                            icon: const Icon(
+                              CupertinoIcons.play_fill,
+                              size: 22,
+                            ),
+                            label: const Text('播放'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      _AlbumGlassAction(
+                        label: saved ? '已收藏' : '收藏',
+                        icon: saved
+                            ? CupertinoIcons.check_mark
+                            : CupertinoIcons.add,
+                        onTap: () => setState(() => saved = !saved),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  const Divider(color: Color(0x38FFFFFF), height: 1),
+                  if (album == null && error == null)
+                    const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      ),
+                    ),
+                  if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Text(
+                        error!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  if (album != null)
+                    for (var i = 0; i < value.tracks.length; i++) ...[
+                      _AlbumTrackRow(
+                        track: value.tracks[i],
+                        active: playback.current?.id == value.tracks[i].id,
+                        onTap: () =>
+                            playback.playTracks(value.tracks, initialIndex: i),
+                        onMore: () => showTrackActions(
+                          context,
+                          widget.controller,
+                          value.tracks[i],
+                        ),
+                      ),
+                      const Divider(color: Color(0x2EFFFFFF), height: 1),
+                    ],
+                  const SizedBox(height: 20),
+                  _AlbumMetadata(album: value),
+                ],
+              ),
+              Positioned(
+                left: 16,
+                right: 16,
+                top: MediaQuery.paddingOf(context).top + 8,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _AlbumGlassAction(
+                      label: '返回',
+                      icon: CupertinoIcons.back,
+                      size: 56,
+                      onTap: () => Navigator.pop(context),
+                    ),
+                    GlassPanel(
+                      radius: 28,
+                      padding: EdgeInsets.zero,
+                      color: const Color(0x26FFFFFF),
+                      borderColor: const Color(0x66FFFFFF),
+                      shadowColor: const Color(0x22000000),
+                      child: SizedBox(
+                        width: 128,
+                        height: 56,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            IconButton(
+                              tooltip: '分享',
+                              onPressed: () async {
+                                await Clipboard.setData(
+                                  ClipboardData(
+                                    text: '${value.name} — ${value.artist}',
+                                  ),
+                                );
+                                if (context.mounted) {
+                                  message(context, '专辑信息已复制');
+                                }
+                              },
+                              color: Colors.white,
+                              icon: const Icon(CupertinoIcons.share),
+                            ),
+                            IconButton(
+                              tooltip: '更多',
+                              onPressed: () => message(
+                                context,
+                                '${value.songCount} 首歌曲 · ${_durationLabel(value.duration)}',
                               ),
+                              color: Colors.white,
+                              icon: const Icon(CupertinoIcons.ellipsis),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      if (album == null && error == null)
-                        const CircularProgressIndicator(),
-                      if (error != null)
-                        Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Text(
-                            error!,
-                            style: const TextStyle(color: musicRed),
-                          ),
-                        ),
-                      if (album != null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Column(
-                            children: [
-                              for (var i = 0; i < value.tracks.length; i++)
-                                TrackRow(
-                                  track: value.tracks[i],
-                                  index: i + 1,
-                                  onTap: () =>
-                                      widget.controller.playback.playTracks(
-                                        value.tracks,
-                                        initialIndex: i,
-                                      ),
-                                  onMore: () => showTrackActions(
-                                    context,
-                                    widget.controller,
-                                    value.tracks[i],
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      const SizedBox(height: 42),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+              if (playback.current != null)
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: miniPlayerBottom,
+                  child: MiniPlayer(
+                    controller: widget.controller,
+                    dark: true,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            PlayerSheet(controller: widget.controller),
+                      ),
+                    ),
                   ),
                 ),
-              ],
-            ),
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 5,
+                child: SafeArea(
+                  top: false,
+                  child: TelegramDock(
+                    selectedIndex: widget.selectedIndex,
+                    onSelected: (index) => Navigator.pop(context, index),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
+}
+
+String _albumQuality(MusicAlbum album) {
+  final lossless = album.tracks.any((track) => track.isLossless);
+  return [
+    if (album.year != null) '${album.year}年',
+    if (lossless) '无损',
+    '${album.tracks.isEmpty ? album.songCount : album.tracks.length}首歌曲',
+  ].join(' · ');
+}
+
+String _durationLabel(Duration duration) {
+  if (duration <= Duration.zero) return '时长未知';
+  final minutes = duration.inMinutes;
+  final seconds = duration.inSeconds.remainder(60);
+  return seconds == 0 ? '$minutes 分钟' : '$minutes分$seconds秒';
+}
+
+class _AlbumBackdrop extends StatelessWidget {
+  const _AlbumBackdrop({required this.album});
+
+  final MusicAlbum album;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = album.coverUrl;
+    Widget? image;
+    if (value?.isNotEmpty == true) {
+      final uri = Uri.tryParse(value!);
+      if (uri?.scheme == 'file') {
+        image = Image.file(
+          File.fromUri(uri!),
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        );
+      } else if (uri == null ||
+          (uri.scheme != 'http' && uri.scheme != 'https')) {
+        image = Image.file(
+          File(value),
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        );
+      } else {
+        image = Image.network(
+          value,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        );
+      }
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const ColoredBox(color: Color(0xFF8C897F)),
+        if (image != null)
+          RepaintBoundary(
+            child: Transform.scale(
+              scale: 1.22,
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 42, sigmaY: 42),
+                child: image,
+              ),
+            ),
+          ),
+        const ColoredBox(color: Color(0x8C6C6A62)),
+      ],
+    );
+  }
+}
+
+class _AlbumGlassAction extends StatefulWidget {
+  const _AlbumGlassAction({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.size = 60,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final double size;
+
+  @override
+  State<_AlbumGlassAction> createState() => _AlbumGlassActionState();
+}
+
+class _AlbumGlassActionState extends State<_AlbumGlassAction> {
+  bool pressed = false;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    enabled: widget.onTap != null,
+    label: widget.label,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: widget.onTap == null
+          ? null
+          : (_) => setState(() => pressed = true),
+      onTapCancel: widget.onTap == null
+          ? null
+          : () => setState(() => pressed = false),
+      onTapUp: widget.onTap == null
+          ? null
+          : (_) {
+              setState(() => pressed = false);
+              HapticFeedback.selectionClick();
+              widget.onTap!();
+            },
+      child: AnimatedScale(
+        scale: pressed ? .94 : 1,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        child: GlassPanel(
+          radius: widget.size / 2,
+          padding: EdgeInsets.zero,
+          color: const Color(0x26FFFFFF),
+          borderColor: const Color(0x66FFFFFF),
+          shadowColor: const Color(0x22000000),
+          child: SizedBox.square(
+            dimension: widget.size,
+            child: Icon(
+              widget.icon,
+              color: widget.onTap == null ? Colors.white38 : Colors.white,
+              size: widget.size * .42,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _AlbumTrackRow extends StatelessWidget {
+  const _AlbumTrackRow({
+    required this.track,
+    required this.active,
+    required this.onTap,
+    required this.onMore,
+  });
+
+  final MusicTrack track;
+  final bool active;
+  final VoidCallback onTap;
+  final VoidCallback onMore;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
+    onTap: onTap,
+    leading: SizedBox(
+      width: 24,
+      child: active
+          ? const Icon(CupertinoIcons.waveform, color: Colors.white, size: 18)
+          : const Icon(
+              CupertinoIcons.circle_fill,
+              color: Colors.white,
+              size: 7,
+            ),
+    ),
+    title: Text(
+      track.title,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 17,
+        fontWeight: FontWeight.w500,
+      ),
+    ),
+    subtitle: Text(
+      track.qualityLabel,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(color: Colors.white60, fontSize: 12),
+    ),
+    trailing: IconButton(
+      onPressed: onMore,
+      color: Colors.white,
+      icon: const Icon(CupertinoIcons.ellipsis),
+    ),
+  );
+}
+
+class _AlbumMetadata extends StatelessWidget {
+  const _AlbumMetadata({required this.album});
+
+  final MusicAlbum album;
+
+  @override
+  Widget build(BuildContext context) => DefaultTextStyle(
+    style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.45),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (album.tracks.any((track) => track.isLossless))
+          const Row(
+            children: [
+              Icon(CupertinoIcons.waveform, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text('无损音频'),
+            ],
+          ),
+        const SizedBox(height: 16),
+        if (album.year != null) Text('${album.year}年'),
+        Text(
+          '${album.tracks.isEmpty ? album.songCount : album.tracks.length}首歌曲，${_durationLabel(album.duration)}',
+        ),
+        Text('© ${album.year ?? ''} ${album.artist}'),
+      ],
+    ),
+  );
 }
 
 class PlaylistScreen extends StatefulWidget {
