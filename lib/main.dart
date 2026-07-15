@@ -20,6 +20,11 @@ const ink = Color(0xFF1D1D1F);
 const mutedInk = Color(0xFF6E6E73);
 const musicRed = Color(0xFFFA2D48);
 const canvas = Color(0xFFF5F5F7);
+const glassFill = Color(0xE8FDFDFE);
+const glassStroke = Color(0x241D1D1F);
+const glassShadow = Color(0x1F000000);
+const cardFill = Color(0xDCFDFDFE);
+const cardStroke = Color(0x1A1D1D1F);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -236,14 +241,14 @@ class TelegramDock extends StatelessWidget {
         height: 58,
         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
         decoration: BoxDecoration(
-          color: const Color(0xFFFDFDFE).withValues(alpha: .82),
+          color: const Color(0xF2FDFDFE),
           borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: Colors.white.withValues(alpha: .95)),
+          border: Border.all(color: const Color(0x2E1D1D1F)),
           boxShadow: const [
             BoxShadow(
-              color: Color(0x1C000000),
-              blurRadius: 24,
-              offset: Offset(0, 8),
+              color: Color(0x29000000),
+              blurRadius: 22,
+              offset: Offset(0, 7),
             ),
           ],
         ),
@@ -489,15 +494,11 @@ class GlassPanel extends StatelessWidget {
       child: Container(
         padding: padding,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .72),
+          color: glassFill,
           borderRadius: BorderRadius.circular(radius),
-          border: Border.all(color: Colors.white.withValues(alpha: .9)),
+          border: Border.all(color: glassStroke),
           boxShadow: const [
-            BoxShadow(
-              color: Color(0x14000000),
-              blurRadius: 30,
-              offset: Offset(0, 10),
-            ),
+            BoxShadow(color: glassShadow, blurRadius: 26, offset: Offset(0, 9)),
           ],
         ),
         child: child,
@@ -842,7 +843,7 @@ class _SearchPageState extends State<SearchPage> {
               onChanged: widget.controller.search,
               decoration: InputDecoration(
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: .72),
+                fillColor: glassFill,
                 prefixIcon: const Icon(CupertinoIcons.search),
                 suffixIcon: search.text.isEmpty
                     ? null
@@ -856,7 +857,15 @@ class _SearchPageState extends State<SearchPage> {
                       ),
                 hintText: '歌曲、艺人、专辑',
                 border: OutlineInputBorder(
-                  borderSide: BorderSide.none,
+                  borderSide: const BorderSide(color: glassStroke),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: glassStroke),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: musicRed, width: 1.4),
                   borderRadius: BorderRadius.circular(15),
                 ),
               ),
@@ -2155,6 +2164,7 @@ class AlbumTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFFFFE8EC),
           borderRadius: BorderRadius.circular(32),
+          border: Border.all(color: cardStroke),
           boxShadow: const [
             BoxShadow(
               color: Color(0x12000000),
@@ -2340,24 +2350,49 @@ class AlbumGrid extends StatelessWidget {
       itemBuilder: (_, i) => LayoutBuilder(
         builder: (_, constraints) => GestureDetector(
           onTap: () => onAlbum(albums[i]),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Artwork(album: albums[i], size: constraints.maxWidth, radius: 18),
-              const SizedBox(height: 7),
-              Text(
-                albums[i].name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              Text(
-                albums[i].artist,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: mutedInk, fontSize: 13),
-              ),
-            ],
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: cardFill,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: cardStroke),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x16000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Artwork(
+                  album: albums[i],
+                  size: constraints.maxWidth - 16,
+                  radius: 17,
+                ),
+                const SizedBox(height: 7),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Text(
+                    albums[i].name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Text(
+                    albums[i].artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: mutedInk, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2377,21 +2412,35 @@ class PlaylistList extends StatelessWidget {
           subtitle: '点击右上角加号创建个人歌单，服务器歌单也会显示在这里。',
         )
       : Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Column(
-            children: [
-              for (final playlist in playlists)
-                ListTile(
-                  onTap: () => onTap(playlist),
-                  leading: Artwork(playlist: playlist, size: 56, radius: 12),
-                  title: Text(
-                    playlist.name,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: GlassPanel(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            radius: 22,
+            child: Column(
+              children: [
+                for (var i = 0; i < playlists.length; i++) ...[
+                  ListTile(
+                    onTap: () => onTap(playlists[i]),
+                    leading: Artwork(
+                      playlist: playlists[i],
+                      size: 56,
+                      radius: 12,
+                    ),
+                    title: Text(
+                      playlists[i].name,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text('${playlists[i].songCount} 首歌曲'),
+                    trailing: const Icon(
+                      CupertinoIcons.chevron_right,
+                      size: 18,
+                    ),
                   ),
-                  subtitle: Text('${playlist.songCount} 首歌曲'),
-                  trailing: const Icon(CupertinoIcons.chevron_right, size: 18),
-                ),
-            ],
+                  if (i != playlists.length - 1)
+                    const Divider(height: 1, indent: 84),
+                ],
+              ],
+            ),
           ),
         );
 }
