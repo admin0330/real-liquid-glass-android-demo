@@ -18,6 +18,7 @@
 - Now Playing 与歌词页使用 Apple Music 风格的无底色大号实心播放/暂停控制。
 - 支持应用内下载并安装更新；同版本 APK 持久缓存并校验包名、版本与 SHA-256，开启安装权限后不会重复下载。
 - 可在设置页配置阿里云 OSS/ECS `latest.json` 镜像，镜像优先且 GitHub Releases 自动回退。
+- 正式版本默认使用 `https://ym3861.cn/liquid-music-updates/latest.json`；标签发布后由 GitHub Actions 自动同步到阿里云 ECS。
 
 ## 音乐来源
 

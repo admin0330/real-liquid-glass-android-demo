@@ -71,3 +71,29 @@ jobs:
             "build/app/outputs/flutter-apk/latest.json" \
             --title "Liquid Music ${GITHUB_REF_NAME}" \
             --generate-notes
+
+      - name: Configure Aliyun SSH
+        env:
+          ALIYUN_SSH_PRIVATE_KEY: ${{ secrets.ALIYUN_SSH_PRIVATE_KEY }}
+          ALIYUN_SSH_HOST_KEY: ${{ secrets.ALIYUN_SSH_HOST_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$ALIYUN_SSH_PRIVATE_KEY" > ~/.ssh/aliyun_deploy
+          printf '%s\n' "$ALIYUN_SSH_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/aliyun_deploy ~/.ssh/known_hosts
+
+      - name: Publish update mirror to Aliyun ECS
+        env:
+          ALIYUN_SSH_HOST: ${{ secrets.ALIYUN_SSH_HOST }}
+          ALIYUN_SSH_USER: ${{ secrets.ALIYUN_SSH_USER }}
+        run: |
+          APK="build/app/outputs/flutter-apk/liquid-music-${GITHUB_REF_NAME}.apk"
+          SSH=(ssh -i ~/.ssh/aliyun_deploy -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          SCP=(scp -i ~/.ssh/aliyun_deploy -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          "${SCP[@]}" \
+            "$APK" \
+            "$APK.sha256" \
+            build/app/outputs/flutter-apk/latest.json \
+            "$ALIYUN_SSH_USER@$ALIYUN_SSH_HOST:/var/www/liquid-music-updates/"
+          "${SSH[@]}" "$ALIYUN_SSH_USER@$ALIYUN_SSH_HOST" \
+            "chmod 644 /var/www/liquid-music-updates/liquid-music-${GITHUB_REF_NAME}.apk /var/www/liquid-music-updates/liquid-music-${GITHUB_REF_NAME}.apk.sha256 /var/www/liquid-music-updates/latest.json"

@@ -7,7 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 class GitHubUpdateService {
   static const _channel = MethodChannel('real_liquid_glass_demo/updater');
   static const _mirrorKey = 'update_manifest_url_v1';
-  static const _builtInMirror = String.fromEnvironment('UPDATE_MANIFEST_URL');
+  static const _builtInMirror = String.fromEnvironment(
+    'UPDATE_MANIFEST_URL',
+    defaultValue: 'https://ym3861.cn/liquid-music-updates/latest.json',
+  );
   static const _latestRelease =
       'https://api.github.com/repos/admin0330/real-liquid-glass-android-demo/releases/latest';
 
