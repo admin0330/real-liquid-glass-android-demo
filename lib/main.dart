@@ -365,41 +365,45 @@ class SmoothPageStack extends StatelessWidget {
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) => Stack(
-    children: List.generate(children.length, (i) {
-      final selected = i == index;
-      final offset = selected
-          ? Offset.zero
-          : Offset(i < index ? -.035 : .035, 0);
-      return Positioned.fill(
-        child: IgnorePointer(
-          ignoring: !selected,
-          child: ExcludeSemantics(
-            excluding: !selected,
-            child: TickerMode(
-              enabled: selected,
-              child: AnimatedSlide(
-                offset: offset,
-                duration: const Duration(milliseconds: 380),
-                curve: Curves.easeOutCubic,
-                child: AnimatedScale(
-                  scale: selected ? 1 : .985,
-                  duration: const Duration(milliseconds: 380),
-                  curve: Curves.easeOutCubic,
-                  child: AnimatedOpacity(
-                    opacity: selected ? 1 : 0,
-                    duration: const Duration(milliseconds: 280),
-                    curve: Curves.easeOut,
-                    child: children[i],
-                  ),
-                ),
+  Widget build(BuildContext context) {
+    final paintOrder = [
+      for (var i = 0; i < children.length; i++)
+        if (i != index) i,
+      index,
+    ];
+    return Stack(children: [for (final i in paintOrder) _pageLayer(i)]);
+  }
+
+  Widget _pageLayer(int i) {
+    final selected = i == index;
+    final offset = selected ? Offset.zero : Offset(i < index ? -.035 : .035, 0);
+    return Positioned.fill(
+      key: ValueKey('smooth-page-layer-$i'),
+      child: IgnorePointer(
+        ignoring: !selected,
+        child: ExcludeSemantics(
+          excluding: !selected,
+          child: AnimatedSlide(
+            offset: offset,
+            duration: const Duration(milliseconds: 380),
+            curve: Curves.easeOutCubic,
+            child: AnimatedScale(
+              scale: selected ? 1 : .985,
+              duration: const Duration(milliseconds: 380),
+              curve: Curves.easeOutCubic,
+              child: AnimatedOpacity(
+                key: ValueKey('smooth-page-opacity-$i'),
+                opacity: selected ? 1 : 0,
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeOut,
+                child: TickerMode(enabled: selected, child: children[i]),
               ),
             ),
           ),
         ),
-      );
-    }),
-  );
+      ),
+    );
+  }
 }
 
 class FrostedBackground extends StatefulWidget {
