@@ -43,7 +43,9 @@ jobs:
           validate-wrappers: true
 
       - name: Compile analyzed code
-        run: ./gradlew --no-daemon clean assembleDebug
+        # CodeQL manual builds must execute the compiler under its tracer.
+        # Cached Kotlin/Java outputs leave the database empty on docs-only commits.
+        run: ./gradlew --no-daemon --no-build-cache --rerun-tasks clean assembleDebug
 
       - name: Analyze
         uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
