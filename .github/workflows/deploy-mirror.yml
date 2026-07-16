@@ -1,0 +1,111 @@
+name: Deploy APK mirror to Aliyun
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to deploy
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aliyun-update-mirror
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and verify signed release files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+          mkdir artifacts
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir artifacts \
+            --pattern "liquid-music-${RELEASE_TAG}.apk" \
+            --pattern "liquid-music-${RELEASE_TAG}.apk.sha256" \
+            --pattern latest.json
+
+          APK="artifacts/liquid-music-${RELEASE_TAG}.apk"
+          test -f "${APK}"
+          test -f "${APK}.sha256"
+          test -f artifacts/latest.json
+          (cd artifacts && sha256sum --check "liquid-music-${RELEASE_TAG}.apk.sha256")
+          jq -e --arg apk "$(basename "${APK}")" '
+            (keys | sort) == ([
+              "apkUrl", "apk_url", "changelog", "notes", "sha256",
+              "size", "version", "versionCode", "versionName"
+            ] | sort)
+            and (.versionName == .version)
+            and (.changelog == .notes)
+            and (.apk_url == $apk)
+            and (.sha256 | test("^[0-9a-f]{64}$"))
+            and (.size > 0)
+          ' artifacts/latest.json >/dev/null
+          test "$(stat --printf='%s' "${APK}")" = "$(jq -r '.size' artifacts/latest.json)"
+          test "$(sha256sum "${APK}" | cut -d ' ' -f 1)" = "$(jq -r '.sha256' artifacts/latest.json)"
+
+      - name: Configure verified Aliyun SSH
+        shell: bash
+        env:
+          ALIYUN_SSH_PRIVATE_KEY: ${{ secrets.ALIYUN_SSH_PRIVATE_KEY }}
+          ALIYUN_SSH_HOST_KEY: ${{ secrets.ALIYUN_SSH_HOST_KEY }}
+          ALIYUN_SSH_HOST: ${{ secrets.ALIYUN_SSH_HOST }}
+          ALIYUN_SSH_USER: ${{ secrets.ALIYUN_SSH_USER }}
+        run: |
+          set -euo pipefail
+          for name in ALIYUN_SSH_PRIVATE_KEY ALIYUN_SSH_HOST_KEY ALIYUN_SSH_HOST ALIYUN_SSH_USER; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Required mirror secret is missing: ${name}" >&2
+              exit 1
+            fi
+          done
+
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${ALIYUN_SSH_PRIVATE_KEY}" > ~/.ssh/aliyun_deploy
+          printf '%s\n' "${ALIYUN_SSH_HOST_KEY}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/aliyun_deploy ~/.ssh/known_hosts
+
+      - name: Atomically publish update mirror
+        shell: bash
+        env:
+          ALIYUN_SSH_HOST: ${{ secrets.ALIYUN_SSH_HOST }}
+          ALIYUN_SSH_USER: ${{ secrets.ALIYUN_SSH_USER }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          APK="artifacts/liquid-music-${RELEASE_TAG}.apk"
+          SSH=(ssh -i ~/.ssh/aliyun_deploy -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          SCP=(scp -i ~/.ssh/aliyun_deploy -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          REMOTE="${ALIYUN_SSH_USER}@${ALIYUN_SSH_HOST}"
+
+          "${SCP[@]}" "${APK}" "${APK}.sha256" \
+            "${REMOTE}:/var/www/liquid-music-updates/"
+          "${SCP[@]}" artifacts/latest.json \
+            "${REMOTE}:/var/www/liquid-music-updates/latest.json.next"
+          "${SSH[@]}" "${REMOTE}" \
+            "cd /var/www/liquid-music-updates && sha256sum --check liquid-music-${RELEASE_TAG}.apk.sha256 && chmod 644 liquid-music-${RELEASE_TAG}.apk liquid-music-${RELEASE_TAG}.apk.sha256 latest.json.next && mv -f latest.json.next latest.json"
+
+      - name: Remove SSH material
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/aliyun_deploy ~/.ssh/known_hosts

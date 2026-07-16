@@ -1,20 +1,19 @@
 # Release and update runbook
 
-This runbook separates public source validation from possession of the historical Android signing key.
+This runbook keeps source, validation, and signed releases in one GitHub repository while keeping the historical Android signing key outside Git.
 
 ## Repository topology
 
 | Location | Responsibility | Secrets allowed |
 |---|---|---|
-| `admin0330/liquid-music-android` | Source, PRs, unit tests, lint, unsigned R8 verification | None |
-| `admin0330/real-liquid-glass-android-demo` | Signed APK and GitHub Release | Signing secrets |
-| `ym3861.cn/liquid-music-updates` | Mainland China APK mirror and `latest.json` | Aliyun SSH secrets in the distribution repository only |
+| `admin0330/liquid-music-android` | Source, PRs, CI, CodeQL, signed APK and GitHub Release | GitHub Actions encrypted secrets only |
+| `ym3861.cn/liquid-music-updates` | Mainland China APK mirror and `latest.json` | Aliyun SSH secrets in GitHub Actions only |
 
-Never publish an APK built by the source CI. Its Debug artifact uses the `.dev` applicationId, and its Release output is unsigned when no local key is configured.
+Never publish an APK built by the ordinary CI workflow. Its Debug artifact uses the `.dev` applicationId, and its Release output is unsigned when no local key is configured. Only the tag-triggered signed-release workflow is a release authority.
 
 ## Required protected secrets
 
-Keep these in a protected `production` environment in the distribution repository:
+Keep these in GitHub Actions encrypted secrets for the canonical repository. A protected `production` environment with required approval is recommended when the secrets are next rotated:
 
 - `KEYSTORE_BASE64`
 - `KEYSTORE_PASSWORD`
@@ -32,7 +31,7 @@ Require manual approval for the production environment. Protect `v*` tags and `m
 ## Version rules
 
 - `versionCode` must strictly increase. Version 2.4.9 used code 18; 3.0.0 uses code 19.
-- The source tag without its leading `v` must exactly equal `versionName` embedded in the APK.
+- The release tag without its leading `v` must exactly equal `versionName` embedded in the APK.
 - The formal applicationId must stay `io.github.admin0330.real_liquid_glass_demo`.
 - The signing certificate SHA-256 must stay:
 
@@ -40,12 +39,12 @@ Require manual approval for the production environment. Protect `v*` tags and `m
 621185c90ce4a8d95d531bc4ac936b0f54c029dddf910c60e0074342047fb523
 ```
 
-Do not create a `v*` tag until the source commit has passed CI and the release workflow has been reviewed. A tag is an immutable release input; never reuse a version or replace its APK after publication.
+Do not create a `v*` tag until the commit has passed CI and the release workflow has been reviewed. A tag is an immutable release input; never reuse a version or replace its APK after publication.
 
-## Build in the distribution workflow
+## Build in the signed-release workflow
 
 1. Accept a tag using a strict expression such as `^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$`.
-2. Check out the public source repository at that exact tag.
+2. Check out the exact tagged commit from this repository.
 3. Decode the keystore into `$RUNNER_TEMP` after `umask 077`.
 4. Write root-level `key.properties`, with `storeFile` pointing to that absolute temporary JKS.
 5. Build without caches that could serialize signing properties:
@@ -119,7 +118,7 @@ The absolute `apkUrl` and the legacy `apk_url` resolved relative to the manifest
 
 ## Publication order
 
-1. Create the immutable GitHub Release in the distribution repository and attach the verified APK, SHA-256 file, and combined manifest.
+1. Create the immutable GitHub Release in this repository and attach the verified APK, SHA-256 file, and combined manifest.
 2. Upload the versioned APK and checksum to Aliyun under temporary names.
 3. Recompute SHA-256 and size on the server.
 4. Atomically rename the versioned files into place.

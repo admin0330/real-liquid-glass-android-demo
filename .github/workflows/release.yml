@@ -1,0 +1,206 @@
+name: Build and publish signed APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: signed-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+      - name: Check immutable release state
+        id: release_state
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo 'exists=true' >> "${GITHUB_OUTPUT}"
+            echo 'The immutable release already exists; its assets will not be rebuilt or replaced.' >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo 'exists=false' >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Check out tagged source
+        if: steps.release_state.outputs.exists != 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        if: steps.release_state.outputs.exists != 'true'
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Validate wrapper and set up Gradle
+        if: steps.release_state.outputs.exists != 'true'
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with:
+          cache-disabled: true
+
+      - name: Restore protected signing key
+        if: steps.release_state.outputs.exists != 'true'
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Required signing secret is missing: ${name}" >&2
+              exit 1
+            fi
+          done
+
+          umask 077
+          KEYSTORE_PATH="${RUNNER_TEMP}/liquid-music-release.jks"
+          printf '%s' "${KEYSTORE_BASE64}" | base64 --decode > "${KEYSTORE_PATH}"
+          {
+            printf 'storeFile=%s\n' "${KEYSTORE_PATH}"
+            printf 'storePassword=%s\n' "${KEYSTORE_PASSWORD}"
+            printf 'keyAlias=%s\n' "${KEY_ALIAS}"
+            printf 'keyPassword=%s\n' "${KEY_PASSWORD}"
+          } > key.properties
+
+      - name: Test, lint, and build signed release
+        if: steps.release_state.outputs.exists != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --no-configuration-cache --no-build-cache \
+            clean testDebugUnitTest lintRelease assembleRelease
+
+          test -f app/build/outputs/apk/release/app-release.apk
+          test ! -f app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Verify APK identity and prepare release files
+        if: steps.release_state.outputs.exists != 'true'
+        id: verify
+        shell: bash
+        env:
+          EXPECTED_CERT_SHA256: 621185c90ce4a8d95d531bc4ac936b0f54c029dddf910c60e0074342047fb523
+          EXPECTED_PACKAGE: io.github.admin0330.real_liquid_glass_demo
+          EXPECTED_VERSION_CODE: '19'
+          EXPECTED_VERSION_NAME: 3.0.0
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "${VERSION}" != "${EXPECTED_VERSION_NAME}" ]]; then
+            echo "Tag version ${VERSION} does not match ${EXPECTED_VERSION_NAME}" >&2
+            exit 1
+          fi
+
+          BUILD_TOOLS="$(find "${ANDROID_HOME}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          APKSIGNER="${BUILD_TOOLS}/apksigner"
+          AAPT="${BUILD_TOOLS}/aapt"
+          SOURCE_APK="app/build/outputs/apk/release/app-release.apk"
+          DIST="${RUNNER_TEMP}/liquid-music-release"
+          mkdir -p "${DIST}"
+          APK="${DIST}/liquid-music-${GITHUB_REF_NAME}.apk"
+          cp "${SOURCE_APK}" "${APK}"
+
+          SIGNATURE_REPORT="$(${APKSIGNER} verify --verbose --print-certs "${APK}")"
+          printf '%s\n' "${SIGNATURE_REPORT}"
+          CERT_SHA256="$(printf '%s\n' "${SIGNATURE_REPORT}" \
+            | grep -i 'certificate SHA-256 digest:' \
+            | head -n 1 \
+            | sed -E 's/.*: ([0-9A-Fa-f]+)$/\1/' \
+            | tr '[:upper:]' '[:lower:]')"
+          if [[ "${CERT_SHA256}" != "${EXPECTED_CERT_SHA256}" ]]; then
+            echo "Signing certificate mismatch" >&2
+            exit 1
+          fi
+
+          BADGING="$(${AAPT} dump badging "${APK}")"
+          PACKAGE_NAME="$(printf '%s\n' "${BADGING}" | sed -n "s/package: name='\([^']*\)'.*/\1/p" | head -n 1)"
+          VERSION_CODE="$(printf '%s\n' "${BADGING}" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" | head -n 1)"
+          VERSION_NAME="$(printf '%s\n' "${BADGING}" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -n 1)"
+          if [[ "${PACKAGE_NAME}" != "${EXPECTED_PACKAGE}" \
+             || "${VERSION_CODE}" != "${EXPECTED_VERSION_CODE}" \
+             || "${VERSION_NAME}" != "${EXPECTED_VERSION_NAME}" ]]; then
+            echo "APK identity mismatch: package=${PACKAGE_NAME}, code=${VERSION_CODE}, name=${VERSION_NAME}" >&2
+            exit 1
+          fi
+
+          SHA256="$(sha256sum "${APK}" | cut -d ' ' -f 1)"
+          SIZE="$(stat --printf='%s' "${APK}")"
+          printf '%s  %s\n' "${SHA256}" "$(basename "${APK}")" > "${APK}.sha256"
+
+          CHANGELOG='原生 Kotlin/Jetpack Compose 重构；本地无损音乐、播放列表、逐行歌词、USB DAC bit-perfect 与安全应用内更新。'
+          jq -n \
+            --argjson versionCode "${EXPECTED_VERSION_CODE}" \
+            --arg versionName "${EXPECTED_VERSION_NAME}" \
+            --arg apkUrl "https://ym3861.cn/liquid-music-updates/$(basename "${APK}")" \
+            --arg sha256 "${SHA256}" \
+            --argjson size "${SIZE}" \
+            --arg changelog "${CHANGELOG}" \
+            --arg version "${EXPECTED_VERSION_NAME}" \
+            --arg apk_url "$(basename "${APK}")" \
+            --arg notes "${CHANGELOG}" \
+            '{versionCode:$versionCode,versionName:$versionName,apkUrl:$apkUrl,sha256:$sha256,size:$size,changelog:$changelog,version:$version,apk_url:$apk_url,notes:$notes}' \
+            > "${DIST}/latest.json"
+
+          jq -e '
+            (keys | sort) == ([
+              "apkUrl", "apk_url", "changelog", "notes", "sha256",
+              "size", "version", "versionCode", "versionName"
+            ] | sort)
+            and (.versionName == .version)
+            and (.changelog == .notes)
+            and (.sha256 | test("^[0-9a-f]{64}$"))
+            and (.size > 0)
+          ' "${DIST}/latest.json" >/dev/null
+
+          echo "apk=${APK}" >> "${GITHUB_OUTPUT}"
+          echo "checksum=${APK}.sha256" >> "${GITHUB_OUTPUT}"
+          echo "manifest=${DIST}/latest.json" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish immutable GitHub release
+        if: steps.release_state.outputs.exists != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK: ${{ steps.verify.outputs.apk }}
+          CHECKSUM: ${{ steps.verify.outputs.checksum }}
+          MANIFEST: ${{ steps.verify.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release already exists: ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+          gh release create "${GITHUB_REF_NAME}" \
+            "${APK}" "${CHECKSUM}" "${MANIFEST}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --title "Liquid Music ${GITHUB_REF_NAME}" \
+            --notes '正式 Android 版本。请下载 APK 后覆盖安装；应用数据会按既有包名保留。'
+
+      - name: Remove signing material
+        if: always()
+        shell: bash
+        run: |
+          rm -f key.properties "${RUNNER_TEMP}/liquid-music-release.jks"

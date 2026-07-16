@@ -17,8 +17,8 @@ Liquid Music Android 是一个原生 Kotlin 本地音乐播放器。它将 Apple
 - 目标系统：Android API 37
 - 正式包名：`io.github.admin0330.real_liquid_glass_demo`
 - Debug 包名：`io.github.admin0330.real_liquid_glass_demo.dev`
-- 源码仓库：<https://github.com/admin0330/liquid-music-android>
-- APK 发布仓库：<https://github.com/admin0330/real-liquid-glass-android-demo/releases>
+- 项目仓库：<https://github.com/admin0330/liquid-music-android>
+- 正式 APK：<https://github.com/admin0330/liquid-music-android/releases>
 
 ## 功能
 
@@ -227,15 +227,14 @@ SHA-256: 621185c90ce4a8d95d531bc4ac936b0f54c029dddf910c60e0074342047fb523
 
 旧 Subsonic/Navidrome 服务器地址、用户名和密码不会迁移，并会在可识别时清理。迁移成功标记只在事务完成后写入；失败不会删除旧数据，也不会阻止新的 MediaStore 扫描。
 
-## 源码、APK 与阿里云的职责
+## GitHub 与阿里云的职责
 
-本项目故意分为三层：
+本项目只使用一个 GitHub 仓库：
 
-1. `admin0330/liquid-music-android`：公开源码、无密钥 CI、CodeQL、Dependabot。
-2. `admin0330/real-liquid-glass-android-demo`：正式签名 APK 和 GitHub Release，保留旧客户端的 GitHub 下载入口。
-3. `ym3861.cn`：国内更新镜像；应用默认直接从这里读取清单和 APK，避免依赖 GitHub 连通性。
+1. `admin0330/liquid-music-android`：公开源码、CI、CodeQL、Dependabot、正式签名 APK 和 GitHub Release。
+2. `ym3861.cn`：国内更新镜像；应用默认直接从这里读取清单和 APK，避免依赖 GitHub 连通性。
 
-源码仓库不会持有发行 keystore 或阿里云凭据，也不会自动发布 unsigned APK。完整发布顺序、安全检查和回滚方式见 [`docs/RELEASE.md`](docs/RELEASE.md)。
+仓库源码和 Git 历史不包含发行 keystore、密码或阿里云凭据。普通 CI 只产生 `.dev` Debug 工件和未签名 Release 验证产物；只有受保护的 `v*` 标签发布工作流可以读取 GitHub Actions 加密 Secrets 并签出正式 APK。完整发布顺序、安全检查和回滚方式见 [`docs/RELEASE.md`](docs/RELEASE.md)。
 
 ### Combined 更新清单
 
