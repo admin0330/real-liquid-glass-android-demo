@@ -1,0 +1,44 @@
+# Gradle / Android Studio
+.gradle/
+/build/
+/app/build/
+local.properties
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Release signing and deployment secrets
+key.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+.env
+.env.*
+known_hosts
+SERVER_HANDOFF*.md
+
+# Generated reports and local tooling
+*.log
+*.hprof
+*.swp
+.DS_Store
+.vscode/
+coverage/
+
+# User-owned media and distributable binaries
+*.flac
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.opus
+*.aac
+*.lrc
+*.cue
+*.apk
+*.aab

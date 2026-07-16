@@ -1,0 +1,3 @@
+-keepattributes Signature,*Annotation*
+-keep class androidx.media3.session.** { *; }
+-dontwarn org.conscrypt.**
