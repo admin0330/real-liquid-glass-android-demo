@@ -103,8 +103,8 @@ jobs:
         env:
           EXPECTED_CERT_SHA256: 621185c90ce4a8d95d531bc4ac936b0f54c029dddf910c60e0074342047fb523
           EXPECTED_PACKAGE: io.github.admin0330.real_liquid_glass_demo
-          EXPECTED_VERSION_CODE: '19'
-          EXPECTED_VERSION_NAME: 3.0.0
+          EXPECTED_VERSION_CODE: '20'
+          EXPECTED_VERSION_NAME: 3.0.1
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
@@ -149,7 +149,7 @@ jobs:
           SIZE="$(stat --printf='%s' "${APK}")"
           printf '%s  %s\n' "${SHA256}" "$(basename "${APK}")" > "${APK}.sha256"
 
-          CHANGELOG='原生 Kotlin/Jetpack Compose 重构；本地无损音乐、播放列表、逐行歌词、USB DAC bit-perfect 与安全应用内更新。'
+          CHANGELOG='移除广播页；主页安全内嵌 Ym1r World 个人博客，加入玻璃工具栏、刷新、返回、错误恢复与外链隔离。'
           jq -n \
             --argjson versionCode "${EXPECTED_VERSION_CODE}" \
             --arg versionName "${EXPECTED_VERSION_NAME}" \

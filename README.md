@@ -6,13 +6,13 @@
 
 Liquid Music Android 是一个原生 Kotlin 本地音乐播放器。它将 Apple Music iOS 26 的空间、层次、动态专辑色和 Liquid Glass 视觉语言带到 Android，但只管理设备上的音乐、播放列表和本地歌词。
 
-它不是 Apple Music 客户端，也不会连接 Apple 账号、Apple Music API、在线曲库、DRM、iCloud Music Library、Subsonic 或 Navidrome。应用唯一的网络功能是用户主动触发的应用更新。
+它不是 Apple Music 客户端，也不会连接 Apple 账号、Apple Music API、在线曲库、DRM、iCloud Music Library、Subsonic 或 Navidrome。网络功能仅用于主页内嵌的个人博客和用户主动触发的应用更新；音乐扫描、搜索与播放仍完全在设备本地完成。
 
 > 本项目与 Apple Inc.、Apple Music 或 Bunpod 没有隶属、合作或认可关系。Apple Music 和 iOS 是 Apple Inc. 的商标。界面为独立实现；仓库不包含 Apple/Bunpod 源码、素材、商业音乐、封面或歌词。
 
 ## 当前版本
 
-- 版本：`3.0.0`（`versionCode 19`）
+- 版本：`3.0.1`（`versionCode 20`）
 - 最低系统：Android 8.0 / API 26
 - 目标系统：Android API 37
 - 正式包名：`io.github.admin0330.real_liquid_glass_demo`
@@ -48,16 +48,17 @@ Liquid Music Android 是一个原生 Kotlin 本地音乐播放器。它将 Apple
 - 自定义 `LiquidGlassSurface`：真实背景模糊、透明度、色调、圆角、阴影、噪点和共享动态高光。
 - 16dp 页面边距、12dp 同级间距及 4/8/12/16/24dp 节奏；触控目标不小于 44dp。
 - Palette 从当前专辑封面提取主色，平滑驱动全局渐变和玻璃色调。
-- 五个浮动玻璃导航页：现在就听、新发现、广播、资料库、搜索。
+- 四个浮动玻璃导航页：主页、新发现、资料库、搜索。
 - Dock 和 mini player 的高度被计入内容安全区，不会覆盖列表。
 - mini player → 沉浸播放器，以及专辑卡片 → 专辑页使用 Compose SharedTransition。
 - 页面、Dock 选中态、按钮按压、封面呼吸、颜色和歌词切换均使用统一 motion token。
 - 浅色、深色和跟随系统三种外观。
 
-### 首页与专辑
+### 博客首页与专辑
 
-- 根据真实本地数据展示最近播放、为你推荐、最近添加、最近播放艺人和喜爱专辑。
-- “为你推荐”只来自收藏及播放历史；没有历史时不会伪造推荐。
+- 主页在受限 Android WebView 中内嵌个人博客 [Ym1r World](https://ym3861.cn/blog)。
+- 玻璃工具栏提供网页后退、刷新和应用设置入口；页面状态可在导航切换后恢复。
+- 仅 `https://ym3861.cn` 与 `https://www.ym3861.cn` 在应用内加载，普通外站链接交给系统浏览器，文件、脚本和 Intent URL 会被拒绝。
 - 专辑详情包含封面、艺人、年份、无损标记、曲序、播放和随机播放。
 
 ### 播放列表与收藏
@@ -142,7 +143,7 @@ app/src/main/java/io/github/admin0330/liquidmusic/
 │   └── repository/         # 本地实现
 ├── domain/                 # models、repository contracts、use cases
 ├── feature/                # home/library/search/player/playlist/settings
-├── navigation/             # 五栏导航与详情路由
+├── navigation/             # 四栏导航与详情路由
 ├── player/                 # Media3 service、controller、queue/history
 └── update/                 # HTTPS 更新、校验、缓存、系统安装器
 ```
@@ -215,7 +216,7 @@ SHA-256: 621185c90ce4a8d95d531bc4ac936b0f54c029dddf910c60e0074342047fb523
 
 ## 从 2.4.9 升级
 
-正式包继续使用原 applicationId，因此使用同一证书签名的 3.0.0 可以覆盖升级 2.4.9。
+正式包继续使用原 applicationId，因此使用同一证书签名的 3.0.1 可以覆盖升级 2.4.9 或 3.0.0。
 
 首次启动会幂等迁移：
 
@@ -242,14 +243,14 @@ SHA-256: 621185c90ce4a8d95d531bc4ac936b0f54c029dddf910c60e0074342047fb523
 
 ```json
 {
-  "versionCode": 19,
-  "versionName": "3.0.0",
-  "apkUrl": "https://ym3861.cn/liquid-music-updates/liquid-music-v3.0.0.apk",
+  "versionCode": 20,
+  "versionName": "3.0.1",
+  "apkUrl": "https://ym3861.cn/liquid-music-updates/liquid-music-v3.0.1.apk",
   "sha256": "<64 lowercase hexadecimal characters>",
   "size": 12345678,
   "changelog": "更新说明",
-  "version": "3.0.0",
-  "apk_url": "liquid-music-v3.0.0.apk",
+  "version": "3.0.1",
+  "apk_url": "liquid-music-v3.0.1.apk",
   "notes": "更新说明"
 }
 ```

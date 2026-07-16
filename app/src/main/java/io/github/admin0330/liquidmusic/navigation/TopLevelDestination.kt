@@ -4,7 +4,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.NewReleases
-import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -15,7 +14,6 @@ enum class TopLevelDestination(
 ) {
     ListenNow("listen-now", "主页", Icons.Rounded.Home),
     Browse("browse", "新发现", Icons.Rounded.NewReleases),
-    Radio("radio", "广播", Icons.Rounded.Radio),
     Library("library", "资料库", Icons.Rounded.LibraryMusic),
     Search("search", "搜索", Icons.Rounded.Search),
 }

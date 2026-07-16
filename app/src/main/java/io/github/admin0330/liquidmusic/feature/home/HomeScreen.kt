@@ -1,159 +1,372 @@
 package io.github.admin0330.liquidmusic.feature.home
 
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.Dp
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import android.annotation.SuppressLint
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
+import android.os.Bundle
+import android.view.View
+import android.webkit.CookieManager
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import io.github.admin0330.liquidmusic.app.LibraryScanUiState
-import io.github.admin0330.liquidmusic.core.designsystem.tokens.LiquidSpacing
-import io.github.admin0330.liquidmusic.core.ui.AlbumArtworkCard
-import io.github.admin0330.liquidmusic.core.ui.FeatureScaffold
-import io.github.admin0330.liquidmusic.core.ui.LibraryEmptyState
-import io.github.admin0330.liquidmusic.core.ui.MusicSectionHeader
-import io.github.admin0330.liquidmusic.core.ui.TrackCarousel
-import io.github.admin0330.liquidmusic.core.ui.ArtistArtworkCard
-import io.github.admin0330.liquidmusic.domain.model.Track
-import io.github.admin0330.liquidmusic.navigation.AppLibrarySnapshot
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.net.toUri
+import io.github.admin0330.liquidmusic.BuildConfig
 import io.github.admin0330.liquidmusic.core.designsystem.components.liquidClickable
-import io.github.admin0330.liquidmusic.domain.model.LibraryScanFailure
+import io.github.admin0330.liquidmusic.core.designsystem.glass.LiquidGlassSurface
+import io.github.admin0330.liquidmusic.core.designsystem.tokens.LiquidMotion
+import io.github.admin0330.liquidmusic.core.designsystem.tokens.LiquidSpacing
 
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun HomeScreen(
     bottomPadding: Dp,
-    library: AppLibrarySnapshot,
-    scanState: LibraryScanUiState,
-    onRequestPermission: () -> Unit,
-    onRescan: () -> Unit,
-    onTrackClick: (Track) -> Unit,
-    onPlayQueue: (Track, List<Track>) -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenAlbum: (String) -> Unit,
     modifier: Modifier = Modifier,
-    albumArtworkModifier: @Composable (String) -> Modifier = { Modifier },
 ) {
-    val greeting = greetingForHour(java.time.LocalTime.now().hour)
-    FeatureScaffold(
-        title = greeting,
-        subtitle = "只根据设备上的音乐与播放历史生成",
-        bottomContentPadding = bottomPadding,
-        modifier = modifier,
-        actions = {
-            Box(Modifier.size(44.dp).liquidClickable(onClick = onOpenSettings), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Settings, contentDescription = "设置")
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val savedWebViewState = rememberSaveable { Bundle() }
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var canGoBack by rememberSaveable { mutableStateOf(false) }
+    var pageProgress by rememberSaveable { mutableIntStateOf(0) }
+    var pageError by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val openExternal: (String) -> Unit = remember(context) {
+        { rawUrl ->
+            if (BlogNavigationPolicy.canOpenExternally(rawUrl)) {
+                runCatching {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, rawUrl.toUri()))
+                }
             }
-        },
+        }
+    }
+
+    BackHandler(enabled = canGoBack) {
+        webView?.goBack()
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .padding(top = LiquidSpacing.xs),
     ) {
-        if (library.tracks.isEmpty()) {
-            item(key = "empty-home") {
-                val permissionNeeded = scanState is LibraryScanUiState.PermissionRequired ||
-                    scanState is LibraryScanUiState.PermissionDenied
-                LibraryEmptyState(
-                    title = when (scanState) {
-                        LibraryScanUiState.Scanning -> "正在扫描音乐"
-                        is LibraryScanUiState.Failed -> "无法读取系统音乐库"
-                        else -> "让音乐住进这里"
-                    },
-                    message = when {
-                        permissionNeeded -> "授权读取设备音乐后，会自动显示最近播放、最近添加和你的本地精选。"
-                        scanState is LibraryScanUiState.Failed -> scanState.reason.toUserMessage()
-                        else -> "没有在 MediaStore 中找到受支持的 MP3、FLAC、WAV、M4A 或 OGG 文件。"
-                    },
-                    actionLabel = when {
-                        permissionNeeded -> "允许访问音乐"
-                        scanState is LibraryScanUiState.Failed -> "重新扫描"
-                        else -> null
-                    },
-                    onAction = when {
-                        permissionNeeded -> onRequestPermission
-                        scanState is LibraryScanUiState.Failed -> onRescan
-                        else -> null
-                    },
+        BlogToolbar(
+            canGoBack = canGoBack,
+            onBack = { webView?.goBack() },
+            onRefresh = {
+                pageError = null
+                webView?.reload()
+            },
+            onOpenSettings = onOpenSettings,
+            modifier = Modifier.padding(horizontal = LiquidSpacing.screen),
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(top = LiquidSpacing.xs, bottom = bottomPadding),
+        ) {
+            AndroidView(
+                factory = { viewContext ->
+                    WebView(viewContext).apply webView@{
+                        setBackgroundColor(AndroidColor.TRANSPARENT)
+                        overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+                        isVerticalScrollBarEnabled = false
+                        isHorizontalScrollBarEnabled = false
+
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            allowFileAccess = false
+                            allowContentAccess = false
+                            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                            safeBrowsingEnabled = true
+                            mediaPlaybackRequiresUserGesture = true
+                            javaScriptCanOpenWindowsAutomatically = false
+                            setSupportMultipleWindows(false)
+                            setSupportZoom(false)
+                            builtInZoomControls = false
+                            displayZoomControls = false
+                            textZoom = 100
+                        }
+                        CookieManager.getInstance().apply {
+                            setAcceptCookie(true)
+                            setAcceptThirdPartyCookies(this@webView, false)
+                        }
+                        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                                pageError = null
+                                pageProgress = 0
+                                canGoBack = view.canGoBack()
+                            }
+
+                            override fun onPageFinished(view: WebView, url: String?) {
+                                pageProgress = 100
+                                canGoBack = view.canGoBack()
+                            }
+
+                            override fun shouldOverrideUrlLoading(
+                                view: WebView,
+                                request: WebResourceRequest,
+                            ): Boolean {
+                                val rawUrl = request.url.toString()
+                                if (BlogNavigationPolicy.shouldRenderInsideApp(rawUrl)) return false
+                                openExternal(rawUrl)
+                                return true
+                            }
+
+                            override fun onReceivedError(
+                                view: WebView,
+                                request: WebResourceRequest,
+                                error: WebResourceError,
+                            ) {
+                                if (request.isForMainFrame) {
+                                    pageError = error.description?.toString()?.takeIf(String::isNotBlank)
+                                        ?: "博客暂时无法加载"
+                                }
+                            }
+
+                            override fun onReceivedHttpError(
+                                view: WebView,
+                                request: WebResourceRequest,
+                                errorResponse: WebResourceResponse,
+                            ) {
+                                if (request.isForMainFrame && errorResponse.statusCode >= 400) {
+                                    pageError = "博客返回了 ${errorResponse.statusCode}，请稍后重试"
+                                }
+                            }
+                        }
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                                pageProgress = newProgress.coerceIn(0, 100)
+                            }
+                        }
+
+                        val restored = if (savedWebViewState.isEmpty) {
+                            null
+                        } else {
+                            restoreState(savedWebViewState)
+                        }
+                        if (restored == null) loadUrl(BlogNavigationPolicy.BLOG_URL)
+                    }.also { webView = it }
+                },
+                update = { webView = it },
+                onRelease = { releasedView ->
+                    releasedView.saveState(savedWebViewState)
+                    releasedView.stopLoading()
+                    releasedView.webChromeClient = null
+                    releasedView.webViewClient = WebViewClient()
+                    releasedView.destroy()
+                    if (webView === releasedView) webView = null
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = pageProgress in 0..99 && pageError == null,
+                modifier = Modifier.align(Alignment.TopCenter),
+                enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(LiquidMotion.quick)),
+                exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(LiquidMotion.quick)),
+            ) {
+                LinearProgressIndicator(
+                    progress = { pageProgress / 100f },
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.18f),
                 )
             }
-        } else {
-            if (library.recentlyPlayed.isNotEmpty()) {
-                item(key = "recent-header") { MusicSectionHeader("最近播放") }
-                item(key = "recent-tracks") {
-                    TrackCarousel(library.recentlyPlayed, onTrackClick)
-                }
-            }
-            val historyRecommendations = library.tracks
-                .filter { it.playCount > 0 }
-                .sortedWith(compareByDescending<Track> { it.playCount }.thenByDescending { it.lastPlayedAtMs ?: 0L })
-            val madeForYou = (library.favorites + historyRecommendations).distinctBy(Track::id).take(12)
-            if (madeForYou.isNotEmpty()) {
-                item(key = "made-header") { MusicSectionHeader("为你推荐") }
-                item(key = "made-tracks") { TrackCarousel(madeForYou, onTrackClick) }
-            }
-            if (library.recentlyAdded.isNotEmpty()) {
-                item(key = "added-header") { MusicSectionHeader("最近添加") }
-                item(key = "added-tracks") { TrackCarousel(library.recentlyAdded, onTrackClick) }
-            }
-            val recentlyPlayedArtists = library.recentlyPlayed
-                .map(Track::artist)
-                .filter(String::isNotBlank)
-                .distinctBy(String::lowercase)
-                .mapNotNull { recentName ->
-                    library.artists.firstOrNull { it.name.equals(recentName, ignoreCase = true) }
-                }
-                .take(10)
-            if (recentlyPlayedArtists.isNotEmpty()) {
-                item(key = "recent-artists-header") { MusicSectionHeader("最近播放的艺人") }
-                item(key = "recent-artists") {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(LiquidSpacing.sibling)) {
-                        items(recentlyPlayedArtists, key = { it.id }) { artist ->
-                            ArtistArtworkCard(
-                                artist = artist,
-                                onClick = {
-                                    val artistTracks = library.tracks.filter { track ->
-                                        track.artistId?.let { artist.id.endsWith(":artist:$it") } == true ||
-                                            (track.artistId == null && track.artist.equals(artist.name, ignoreCase = true))
-                                    }
-                                    artistTracks.firstOrNull()?.let { onPlayQueue(it, artistTracks) }
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-            val favoriteAlbumIds = library.favorites.mapNotNull { track ->
-                track.albumId?.let { ":album:$it" }
-            }.toSet()
-            val favoriteAlbums = library.albums.filter { album -> favoriteAlbumIds.any(album.id::endsWith) }
-            if (favoriteAlbums.isNotEmpty()) {
-                item(key = "albums-header") { MusicSectionHeader("喜爱的专辑") }
-                item(key = "albums-row") {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(LiquidSpacing.sibling)) {
-                        items(favoriteAlbums, key = { it.id }) { album ->
-                            AlbumArtworkCard(
-                                album = album,
-                                onClick = { onOpenAlbum(album.id) },
-                                artworkModifier = albumArtworkModifier(album.id),
-                            )
-                        }
-                    }
-                }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = pageError != null,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = LiquidSpacing.screen),
+                enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(LiquidMotion.standard)),
+                exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(LiquidMotion.quick)),
+            ) {
+                BlogErrorCard(
+                    message = pageError ?: "博客暂时无法加载",
+                    onRetry = {
+                        pageError = null
+                        webView?.loadUrl(BlogNavigationPolicy.BLOG_URL)
+                    },
+                )
             }
         }
     }
 }
 
-private fun LibraryScanFailure.toUserMessage(): String = when (this) {
-    LibraryScanFailure.MEDIA_PROVIDER_UNAVAILABLE -> "系统媒体服务暂时不可用，请稍后重新打开应用。"
-    LibraryScanFailure.QUERY_FAILED -> "扫描音乐时发生错误，请检查权限后重试。"
+@Composable
+private fun BlogToolbar(
+    canGoBack: Boolean,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LiquidGlassSurface(
+        modifier = modifier.fillMaxWidth().height(56.dp),
+        cornerRadius = 28.dp,
+        blurRadius = 30.dp,
+        opacity = 0.62f,
+        elevation = 10.dp,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(LiquidSpacing.xxs),
+        ) {
+            BlogToolbarButton(
+                icon = Icons.AutoMirrored.Rounded.ArrowBack,
+                label = "博客后退",
+                enabled = canGoBack,
+                onClick = onBack,
+            )
+            Text(
+                text = "Ym1r World",
+                modifier = Modifier.padding(start = LiquidSpacing.xs),
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+            Spacer(Modifier.weight(1f))
+            BlogToolbarButton(
+                icon = Icons.Rounded.Refresh,
+                label = "刷新博客",
+                onClick = onRefresh,
+            )
+            BlogToolbarButton(
+                icon = Icons.Rounded.Settings,
+                label = "设置",
+                onClick = onOpenSettings,
+            )
+        }
+    }
 }
 
-internal fun greetingForHour(hour: Int): String = when (hour) {
-    in 5..11 -> "早上好"
-    in 12..17 -> "下午好"
-    else -> "晚上好"
+@Composable
+private fun BlogToolbarButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .semantics {
+                role = Role.Button
+                contentDescription = label
+            }
+            .liquidClickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(22.dp),
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.88f else 0.32f),
+        )
+    }
+}
+
+@Composable
+private fun BlogErrorCard(message: String, onRetry: () -> Unit) {
+    LiquidGlassSurface(
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = 24.dp,
+        blurRadius = 30.dp,
+        opacity = 0.72f,
+        elevation = 12.dp,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(LiquidSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(LiquidSpacing.sm),
+        ) {
+            Text(
+                text = "无法打开 Ym1r World",
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Box(
+                modifier = Modifier
+                    .height(44.dp)
+                    .clip(CircleShape)
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "重新加载博客"
+                    }
+                    .liquidClickable(onClick = onRetry)
+                    .padding(horizontal = LiquidSpacing.md),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "重新加载",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
 }

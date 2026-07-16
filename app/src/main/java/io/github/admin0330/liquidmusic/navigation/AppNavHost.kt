@@ -19,7 +19,6 @@ import io.github.admin0330.liquidmusic.feature.browse.BrowseScreen
 import io.github.admin0330.liquidmusic.feature.home.HomeScreen
 import io.github.admin0330.liquidmusic.feature.library.LibraryScreen
 import io.github.admin0330.liquidmusic.feature.library.AlbumDetailScreen
-import io.github.admin0330.liquidmusic.feature.radio.RadioScreen
 import io.github.admin0330.liquidmusic.feature.search.SearchScreen
 import io.github.admin0330.liquidmusic.feature.settings.SettingsScreen
 import io.github.admin0330.liquidmusic.feature.settings.OpenSourceLicensesScreen
@@ -66,23 +65,9 @@ fun SharedTransitionScope.AppNavHost(
         popExitTransition = { exit() },
     ) {
         composable(TopLevelDestination.ListenNow.route) {
-            val visibilityScope = this
             HomeScreen(
                 bottomPadding = bottomPadding,
-                library = library,
-                scanState = scanState,
-                onRequestPermission = onRequestPermission,
-                onRescan = onRescan,
-                onTrackClick = onTrackClick,
-                onPlayQueue = onPlayQueue,
                 onOpenSettings = onOpenSettings,
-                onOpenAlbum = { albumId -> navController.navigate("album/${Uri.encode(albumId)}") },
-                albumArtworkModifier = { albumId ->
-                    Modifier.sharedElement(
-                        sharedContentState = rememberSharedContentState("album-artwork-$albumId"),
-                        animatedVisibilityScope = visibilityScope,
-                    )
-                },
             )
         }
         composable(TopLevelDestination.Browse.route) {
@@ -101,9 +86,6 @@ fun SharedTransitionScope.AppNavHost(
                     )
                 },
             )
-        }
-        composable(TopLevelDestination.Radio.route) {
-            RadioScreen(bottomPadding, library.artists, library.tracks, onPlayQueue = onPlayQueue)
         }
         composable(TopLevelDestination.Library.route) {
             val visibilityScope = this
