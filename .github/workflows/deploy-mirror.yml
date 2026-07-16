@@ -7,6 +7,15 @@ on:
         description: Release tag to deploy
         required: true
         type: string
+    secrets:
+      ALIYUN_SSH_PRIVATE_KEY:
+        required: true
+      ALIYUN_SSH_HOST_KEY:
+        required: true
+      ALIYUN_SSH_HOST:
+        required: true
+      ALIYUN_SSH_USER:
+        required: true
   workflow_dispatch:
     inputs:
       tag:

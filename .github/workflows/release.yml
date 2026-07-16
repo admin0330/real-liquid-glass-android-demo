@@ -204,3 +204,15 @@ jobs:
         shell: bash
         run: |
           rm -f key.properties "${RUNNER_TEMP}/liquid-music-release.jks"
+
+  deploy_update_mirror:
+    name: Publish manual in-app update
+    needs: release
+    uses: ./.github/workflows/deploy-mirror.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets:
+      ALIYUN_SSH_PRIVATE_KEY: ${{ secrets.ALIYUN_SSH_PRIVATE_KEY }}
+      ALIYUN_SSH_HOST_KEY: ${{ secrets.ALIYUN_SSH_HOST_KEY }}
+      ALIYUN_SSH_HOST: ${{ secrets.ALIYUN_SSH_HOST }}
+      ALIYUN_SSH_USER: ${{ secrets.ALIYUN_SSH_USER }}

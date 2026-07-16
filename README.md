@@ -232,10 +232,10 @@ SHA-256: 621185c90ce4a8d95d531bc4ac936b0f54c029dddf910c60e0074342047fb523
 
 本项目只使用一个 GitHub 仓库：
 
-1. `admin0330/liquid-music-android`：公开源码、CI、CodeQL、Dependabot、正式签名 APK 和 GitHub Release。
-2. `ym3861.cn`：国内更新镜像；应用默认直接从这里读取清单和 APK，避免依赖 GitHub 连通性。
+1. `admin0330/liquid-music-android`：公开源码、CI、CodeQL、Dependabot、正式签名 APK、GitHub Release 与镜像部署入口。
+2. `ym3861.cn`：国内更新镜像；每个签名 Release 成功后自动同步版本 APK、校验文件和 `latest.json`，应用默认直接从这里检查和下载。
 
-仓库源码和 Git 历史不包含发行 keystore、密码或阿里云凭据。普通 CI 只产生 `.dev` Debug 工件和未签名 Release 验证产物；只有受保护的 `v*` 标签发布工作流可以读取 GitHub Actions 加密 Secrets 并签出正式 APK。完整发布顺序、安全检查和回滚方式见 [`docs/RELEASE.md`](docs/RELEASE.md)。
+仓库源码和 Git 历史不包含发行 keystore、密码或阿里云凭据。普通 CI 只产生 `.dev` Debug 工件和未签名 Release 验证产物；只有受保护的 `v*` 标签发布工作流可以读取 GitHub Actions 加密 Secrets 并签出正式 APK。签名 Release 成功后，复用工作流只接收四个阿里云 Secret 并原子更新镜像；不会把签名 Secret 传给部署任务。完整发布顺序、安全检查和回滚方式见 [`docs/RELEASE.md`](docs/RELEASE.md)。
 
 ### Combined 更新清单
 
@@ -272,7 +272,7 @@ SHA-256: 621185c90ce4a8d95d531bc4ac936b0f54c029dddf910c60e0074342047fb523
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | 后台持续播放 |
 | `WAKE_LOCK` | 播放期间避免解码被休眠中断 |
 | `MODIFY_AUDIO_SETTINGS` | 音频焦点和 Android 14+ USB mixer 属性 |
-| `INTERNET` | 仅手动应用更新 |
+| `INTERNET` | 加载主页个人博客，以及用户手动检查和下载应用更新 |
 | `REQUEST_INSTALL_PACKAGES` | 打开 Android 系统安装器安装已验证 APK |
 
 音乐、播放历史、播放列表和歌词都保存在设备本地。应用不包含统计 SDK、广告 SDK、账号系统或遥测。更新请求只发送普通 HTTPS 请求；不会上传音乐文件或资料库内容。

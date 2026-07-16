@@ -118,6 +118,8 @@ The absolute `apkUrl` and the legacy `apk_url` resolved relative to the manifest
 
 ## Publication order
 
+The tag-triggered release workflow automatically calls the reusable Aliyun mirror workflow after the signed GitHub Release job succeeds. The mirror job receives only the four Aliyun secrets. `workflow_dispatch` remains available for an explicit re-deploy of an existing immutable release.
+
 1. Create the immutable GitHub Release in this repository and attach the verified APK, SHA-256 file, and combined manifest.
 2. Upload the versioned APK and checksum to Aliyun under temporary names.
 3. Recompute SHA-256 and size on the server.
